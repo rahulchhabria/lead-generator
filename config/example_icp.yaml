@@ -1,0 +1,39 @@
+# Example ICP (Ideal Customer Profile) definition.
+# Customize this for your target market.
+
+icp:
+  description: >
+    Series A-C B2B SaaS companies building developer tools or infrastructure.
+    They should be growing fast, have engineering-led culture, and be
+    likely to need help with [your product/service].
+
+  target_roles:
+    - "CTO"
+    - "VP Engineering"
+    - "Head of Platform"
+    - "Director of Engineering"
+
+  company_size: "50-500 employees"
+
+  industries:
+    - "SaaS"
+    - "Developer Tools"
+    - "Cloud Infrastructure"
+    - "DevOps"
+
+  geographies:
+    - "United States"
+    - "United Kingdom"
+    - "Germany"
+
+  technologies:
+    - "Python"
+    - "Kubernetes"
+    - "AWS"
+
+  exclusions:
+    - "google.com"
+    - "microsoft.com"
+    - "amazon.com"
+
+  max_leads: 25

@@ -1,0 +1,50 @@
+# Sentry ICP (Ideal Customer Profile) definition.
+# Targeting engineering leaders at fast-growing Series A-C companies in the US.
+
+icp:
+  description: >
+    Series A-C companies in the United States with an engineering-led culture
+    actively shipping production software. They should be growing fast — both
+    in ARR and in headcount (especially engineering headcount). Industry is
+    not a constraint; Sentry supports any runtime and any device. Focus on
+    companies where engineering velocity and code quality are strategic
+    priorities.
+
+  target_roles:
+    - "CTO"
+    - "VP Engineering"
+    - "Head of Engineering"
+    - "Director of Engineering"
+    - "Director of Software Engineering"
+    - "Principal Engineer"
+    - "Staff Engineer"
+    - "Engineering Manager"
+    - "Senior Software Engineer"
+    - "Software Engineer"
+
+  company_size: "10-500 employees"
+
+  funding_stage:
+    - "Series A"
+    - "Series B"
+    - "Series C"
+
+  growth_signals:
+    - "Rapid ARR growth (YoY)"
+    - "High engineering headcount growth"
+    - "Recent funding in last 12-18 months"
+    - "Active job postings for engineers"
+
+  industries: []
+
+  technologies: []
+
+  geographies:
+    - "United States"
+
+  exclusions:
+    - "google.com"
+    - "microsoft.com"
+    - "amazon.com"
+
+  max_leads: 50

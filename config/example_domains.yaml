@@ -1,0 +1,28 @@
+# Example domain list - use this when you already have target companies.
+# Skips account discovery and goes straight to contact finding.
+
+target_roles:
+  - "CTO"
+  - "VP Engineering"
+  - "Head of Engineering"
+
+domains:
+  - domain: stripe.com
+    company_name: Stripe
+    notes: "Payments platform, strong engineering culture"
+
+  - domain: vercel.com
+    company_name: Vercel
+    notes: "Frontend cloud, Next.js creators"
+
+  - domain: linear.app
+    company_name: Linear
+    notes: "Project management tool for software teams"
+
+  - domain: planetscale.com
+    company_name: PlanetScale
+    notes: "Serverless MySQL platform"
+
+  - domain: fly.io
+    company_name: Fly.io
+    notes: "App deployment platform"

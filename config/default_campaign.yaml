@@ -1,0 +1,21 @@
+# Campaign configuration - sender info, email settings, and pipeline behavior.
+
+campaign:
+  sender_name: "Your Name"
+  sender_title: "Your Title"
+  sender_company: "Your Company"
+  sender_email: "you@example.com"
+  physical_address: "123 Main St, City, State ZIP"
+
+email:
+  tone: "casual"                    # casual, professional, friendly
+  max_words: 150                    # Max words in email body
+  cta_type: "meeting"              # meeting, demo, reply, link
+  unsubscribe_text: "Not interested? Reply 'unsubscribe' and I'll remove you immediately."
+  daily_send_limit: 100
+
+pipeline:
+  email_min_confidence: 50         # Skip emails below this confidence score
+  skip_unverified_emails: false    # If true, only use verified emails
+  research_depth: "standard"       # standard or deep
+  value_proposition: ""            # Your product/service value prop (helps email quality)
