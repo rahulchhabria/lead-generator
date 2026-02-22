@@ -85,9 +85,7 @@ class CreateCampaignRequest(BaseModel):
 def create_campaign(req: CreateCampaignRequest):
     """Create and start a new campaign (runs pipeline in background)."""
     from src.web.background import job_manager
-    from src.models import ICPDefinition, DomainList, DomainEntry, CampaignConfig, Campaign, PipelineStage
-    from src.config import load_api_config
-    from src.database import Database
+    from src.models import ICPDefinition, DomainList, DomainEntry, CampaignConfig
 
     if not req.icp and not req.domains:
         raise HTTPException(status_code=400, detail="Provide either icp or domains")
@@ -100,23 +98,9 @@ def create_campaign(req: CreateCampaignRequest):
 
     config = CampaignConfig(**(req.config or {}))
 
-    # Pre-create campaign so we have an ID to return immediately
-    campaign_id = str(uuid.uuid4())[:8]
-    api_config = load_api_config()
-    db = Database(api_config.db_path)
-    campaign = Campaign(
-        id=campaign_id,
-        icp_json=icp.model_dump_json() if icp else None,
-        domains_json=domain_list.model_dump_json() if domain_list else None,
-        config_json=config.model_dump_json(),
-        current_stage=PipelineStage.DISCOVERY,
-    )
-    db.create_campaign(campaign)
-    db.close()
+    job = job_manager.create_job("Campaign starting…")
 
-    job = job_manager.create_job(f"Campaign {campaign_id}")
-
-    def _run_pipeline(job, campaign_id, icp, domain_list, config):
+    def _run_pipeline(job, icp, domain_list, config):
         from src.pipeline import Pipeline
         from src.config import load_api_config
         from src.database import Database
@@ -131,15 +115,13 @@ def create_campaign(req: CreateCampaignRequest):
                 on_status=lambda msg: job.update(message=msg),
                 on_review=None,  # auto-approve in API mode
             )
-            # Pass the pre-created campaign ID to pipeline
-            pipeline._forced_campaign_id = campaign_id
-            pipeline.run_new(icp=icp, domains=domain_list, campaign_id=campaign_id)
+            campaign_id = pipeline.run_new(icp=icp, domains=domain_list)
             job.result = {"campaign_id": campaign_id}
         finally:
             db.close()
 
-    job_manager.run_in_thread(job, _run_pipeline, campaign_id, icp, domain_list, config)
-    return {"campaign_id": campaign_id, "job_id": job.job_id, "status": "started"}
+    job_manager.run_in_thread(job, _run_pipeline, icp, domain_list, config)
+    return {"campaign_id": None, "job_id": job.job_id, "status": "started"}
 
 
 @router.post("/{campaign_id}/advance")
