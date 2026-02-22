@@ -12,6 +12,7 @@ from src.agents import account_discovery, contact_email, email_composer, researc
 from src.agents.base import BaseAgent
 from src.config import APIConfig
 from src.database import Database
+from src.enrichment.engine import enrich_domain
 from src.models import (
     Account,
     Campaign,
@@ -237,10 +238,33 @@ class Pipeline:
             self.db.batch_update_account_status(all_ids, LeadStatus.APPROVED)
             self.on_status(f"Auto-approved {len(all_ids)} accounts.")
 
+        self._enrich_approved_accounts(campaign_id)
         self.db.update_campaign_stage(campaign_id, PipelineStage.CONTACT_FINDING)
+
+    def _enrich_approved_accounts(self, campaign_id: str):
+        """Enrich approved accounts using the enrichment engine (best-effort, skips cached)."""
+        accounts = self.db.get_accounts(campaign_id, LeadStatus.APPROVED)
+        to_enrich = [a for a in accounts if not self.db.get_enrichment(a.domain)]
+        if not to_enrich:
+            return
+
+        self.on_status(f"Enriching {len(to_enrich)} accounts...")
+        enriched = 0
+        for account in to_enrich:
+            try:
+                data = enrich_domain(account.domain, account.company_name)
+                self.db.upsert_enrichment(data)
+                enriched += 1
+            except Exception as e:
+                logger.warning(f"Enrichment failed for {account.domain}: {e}")
+
+        self.on_status(f"Enriched {enriched}/{len(to_enrich)} accounts.")
 
     def _run_contact_finding(self, campaign_id: str, target_roles: list[str]):
         """Stage 2: Contact & Email Finding."""
+        # Enrich any accounts not yet enriched (handles domain-list campaigns that skip review)
+        self._enrich_approved_accounts(campaign_id)
+
         accounts = self.db.get_accounts(campaign_id, LeadStatus.APPROVED)
 
         if not accounts:

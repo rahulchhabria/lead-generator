@@ -1,0 +1,40 @@
+version: "3.9"
+
+# ============================================================
+# Local development: backend + frontend (auto-reload)
+# Usage: docker compose up
+# ============================================================
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - HUNTER_API_KEY=${HUNTER_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - DB_PATH=/app/data/pipeline.db
+      - PORT=8000
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./src:/app/src  # hot-reload in dev
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    command: uvicorn src.web.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  data:

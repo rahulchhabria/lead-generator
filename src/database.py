@@ -113,6 +113,45 @@ CREATE TABLE IF NOT EXISTS suppression_list (
     reason TEXT,
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS enrichment_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain TEXT NOT NULL UNIQUE,
+    company_name TEXT,
+    description TEXT,
+    long_description TEXT,
+    founded_year INTEGER,
+    employee_count INTEGER,
+    employee_count_range TEXT,
+    engineering_count INTEGER,
+    hq_city TEXT,
+    hq_state TEXT,
+    hq_country TEXT,
+    industry TEXT,
+    industry_keywords TEXT DEFAULT '[]',
+    total_funding_raised TEXT,
+    current_valuation TEXT,
+    latest_funding_round TEXT,
+    all_funding_rounds TEXT DEFAULT '[]',
+    ceo TEXT,
+    founders TEXT DEFAULT '[]',
+    recent_leadership_changes TEXT DEFAULT '[]',
+    technographic TEXT,
+    mobile_apps TEXT,
+    hiring TEXT,
+    github_activity TEXT,
+    linkedin_url TEXT,
+    twitter_handle TEXT,
+    github_url TEXT,
+    crunchbase_url TEXT,
+    ai_insights TEXT,
+    data_quality TEXT DEFAULT 'low',
+    confidence_score INTEGER DEFAULT 0,
+    sources TEXT DEFAULT '[]',
+    last_enriched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    enrichment_error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -574,3 +613,171 @@ class Database:
                 }
             )
         return results
+
+    # --- Enrichment ---
+
+    def upsert_enrichment(self, data) -> None:
+        """Insert or update enrichment data for a domain."""
+        import json
+        from datetime import datetime, timezone
+
+        def _dump(obj):
+            if obj is None:
+                return None
+            if hasattr(obj, "model_dump"):
+                return json.dumps(obj.model_dump(mode="json"))
+            if isinstance(obj, list):
+                return json.dumps([
+                    (item.model_dump(mode="json") if hasattr(item, "model_dump") else item)
+                    for item in obj
+                ])
+            return json.dumps(obj)
+
+        self.conn.execute(
+            """INSERT INTO enrichment_data
+               (domain, company_name, description, long_description,
+                founded_year, employee_count, employee_count_range, engineering_count,
+                hq_city, hq_state, hq_country, industry, industry_keywords,
+                total_funding_raised, current_valuation, latest_funding_round, all_funding_rounds,
+                ceo, founders, recent_leadership_changes, technographic, mobile_apps,
+                hiring, github_activity, linkedin_url, twitter_handle, github_url, crunchbase_url,
+                ai_insights, data_quality, confidence_score, sources, last_enriched_at, enrichment_error)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(domain) DO UPDATE SET
+                company_name=excluded.company_name,
+                description=excluded.description,
+                long_description=excluded.long_description,
+                founded_year=excluded.founded_year,
+                employee_count=excluded.employee_count,
+                employee_count_range=excluded.employee_count_range,
+                engineering_count=excluded.engineering_count,
+                hq_city=excluded.hq_city, hq_state=excluded.hq_state, hq_country=excluded.hq_country,
+                industry=excluded.industry, industry_keywords=excluded.industry_keywords,
+                total_funding_raised=excluded.total_funding_raised,
+                current_valuation=excluded.current_valuation,
+                latest_funding_round=excluded.latest_funding_round,
+                all_funding_rounds=excluded.all_funding_rounds,
+                ceo=excluded.ceo, founders=excluded.founders,
+                recent_leadership_changes=excluded.recent_leadership_changes,
+                technographic=excluded.technographic, mobile_apps=excluded.mobile_apps,
+                hiring=excluded.hiring, github_activity=excluded.github_activity,
+                linkedin_url=excluded.linkedin_url, twitter_handle=excluded.twitter_handle,
+                github_url=excluded.github_url, crunchbase_url=excluded.crunchbase_url,
+                ai_insights=excluded.ai_insights, data_quality=excluded.data_quality,
+                confidence_score=excluded.confidence_score, sources=excluded.sources,
+                last_enriched_at=excluded.last_enriched_at, enrichment_error=excluded.enrichment_error""",
+            (
+                data.domain, data.company_name, data.description, data.long_description,
+                data.founded_year, data.employee_count, data.employee_count_range, data.engineering_count,
+                data.hq_city, data.hq_state, data.hq_country, data.industry,
+                json.dumps(data.industry_keywords),
+                data.total_funding_raised, data.current_valuation,
+                _dump(data.latest_funding_round), _dump(data.all_funding_rounds),
+                _dump(data.ceo), _dump(data.founders), json.dumps(data.recent_leadership_changes),
+                _dump(data.technographic), _dump(data.mobile_apps),
+                _dump(data.hiring), _dump(data.github_activity),
+                data.linkedin_url, data.twitter_handle, data.github_url, data.crunchbase_url,
+                _dump(data.ai_insights), data.data_quality, data.confidence_score,
+                json.dumps(data.sources),
+                datetime.now(timezone.utc).isoformat(),
+                data.enrichment_error,
+            ),
+        )
+        self.conn.commit()
+
+    def get_enrichment(self, domain: str) -> Optional[dict]:
+        """Get enrichment data for a domain as a dict."""
+        import json
+        row = self.conn.execute(
+            "SELECT * FROM enrichment_data WHERE domain = ?", (domain,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._enrichment_row_to_dict(row)
+
+    def list_enrichments(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        """List all enrichments with pagination."""
+        rows = self.conn.execute(
+            "SELECT * FROM enrichment_data ORDER BY last_enriched_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [self._enrichment_row_to_dict(r) for r in rows]
+
+    def _enrichment_row_to_dict(self, row) -> dict:
+        import json
+
+        def _load(val):
+            if val is None:
+                return None
+            try:
+                return json.loads(val)
+            except Exception:
+                return val
+
+        return {
+            "domain": row["domain"],
+            "company_name": row["company_name"],
+            "description": row["description"],
+            "long_description": row["long_description"],
+            "founded_year": row["founded_year"],
+            "employee_count": row["employee_count"],
+            "employee_count_range": row["employee_count_range"],
+            "engineering_count": row["engineering_count"],
+            "hq_city": row["hq_city"],
+            "hq_state": row["hq_state"],
+            "hq_country": row["hq_country"],
+            "industry": row["industry"],
+            "industry_keywords": _load(row["industry_keywords"]) or [],
+            "total_funding_raised": row["total_funding_raised"],
+            "current_valuation": row["current_valuation"],
+            "latest_funding_round": _load(row["latest_funding_round"]),
+            "all_funding_rounds": _load(row["all_funding_rounds"]) or [],
+            "ceo": _load(row["ceo"]),
+            "founders": _load(row["founders"]) or [],
+            "recent_leadership_changes": _load(row["recent_leadership_changes"]) or [],
+            "technographic": _load(row["technographic"]),
+            "mobile_apps": _load(row["mobile_apps"]),
+            "hiring": _load(row["hiring"]),
+            "github_activity": _load(row["github_activity"]),
+            "linkedin_url": row["linkedin_url"],
+            "twitter_handle": row["twitter_handle"],
+            "github_url": row["github_url"],
+            "crunchbase_url": row["crunchbase_url"],
+            "ai_insights": _load(row["ai_insights"]),
+            "data_quality": row["data_quality"],
+            "confidence_score": row["confidence_score"],
+            "sources": _load(row["sources"]) or [],
+            "last_enriched_at": row["last_enriched_at"],
+            "enrichment_error": row["enrichment_error"],
+        }
+
+    def get_account(self, account_id: int) -> Optional[Account]:
+        """Get a single account by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_account(row)
+
+    def get_all_accounts(self, limit: int = 100) -> list[Account]:
+        """Get accounts across all campaigns."""
+        rows = self.conn.execute(
+            "SELECT * FROM accounts ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._row_to_account(r) for r in rows]
+
+    def get_all_contacts(self, limit: int = 100) -> list[Contact]:
+        """Get contacts across all campaigns."""
+        rows = self.conn.execute(
+            "SELECT * FROM contacts ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._row_to_contact(r) for r in rows]
+
+    def get_contacts_for_account(self, account_id: int) -> list[Contact]:
+        """Get all contacts for a specific account."""
+        rows = self.conn.execute(
+            "SELECT * FROM contacts WHERE account_id = ?", (account_id,)
+        ).fetchall()
+        return [self._row_to_contact(r) for r in rows]
+

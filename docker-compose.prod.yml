@@ -1,0 +1,63 @@
+version: "3.9"
+
+# ============================================================
+# Production deployment (internal hosted service)
+# Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# Expects these secrets via environment or .env.prod:
+#   ANTHROPIC_API_KEY, SECRET_KEY (JWT), DATABASE_URL (postgres)
+# ============================================================
+
+services:
+  backend:
+    image: prospect-intelligence-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - HUNTER_API_KEY=${HUNTER_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - DB_PATH=/app/data/pipeline.db
+      - PORT=8000
+      - SECRET_KEY=${SECRET_KEY}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    volumes:
+      - prospect_data:/app/data
+      - prospect_output:/app/output
+    expose:
+      - "8000"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    image: prospect-intelligence-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - backend
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+
+volumes:
+  prospect_data:
+  prospect_output:

@@ -254,5 +254,139 @@ def suppress(
         db.close()
 
 
+@app.command()
+def enrich(
+    domain: str = typer.Argument(..., help="Domain to enrich (e.g. stripe.com)"),
+    company_name: str = typer.Option(None, "--company", "-c", help="Company name hint"),
+    output: str = typer.Option(None, "--output", "-o", help="Save JSON to file"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Enrich a single domain with company data."""
+    _setup_logging(verbose)
+
+    api_config = load_api_config()
+    if not api_config.has_anthropic:
+        console.print("[red]Error: ANTHROPIC_API_KEY is required.[/red]")
+        raise typer.Exit(1)
+
+    from src.enrichment.engine import enrich_domain
+    from src.database import Database
+    import json
+
+    console.print(f"[blue]Enriching {domain}...[/blue]")
+    db = Database(api_config.db_path)
+    try:
+        data = enrich_domain(domain, company_name)
+        db.upsert_enrichment(data)
+
+        from rich.table import Table
+        from rich.panel import Panel
+
+        table = Table(title=f"{data.company_name or domain}", show_header=False, box=None)
+        if data.description:
+            console.print(Panel(data.description, title="Description", style="blue"))
+
+        rows = [
+            ("Industry", data.industry or "-"),
+            ("Employees", data.employee_count_range or str(data.employee_count or "-")),
+            ("Founded", str(data.founded_year) if data.founded_year else "-"),
+            ("HQ", ", ".join(filter(None, [data.hq_city, data.hq_country])) or "-"),
+            ("Funding", data.total_funding_raised or "-"),
+            ("Stage", data.ai_insights.growth_stage if data.ai_insights else "-"),
+            ("Tech Stack", ", ".join((data.technographic.all_technologies or [])[:8]) if data.technographic else "-"),
+            ("Open Positions", str(data.hiring.open_positions) if data.hiring else "-"),
+            ("Data Quality", data.data_quality),
+            ("Confidence", f"{data.confidence_score}/100"),
+        ]
+        for label, value in rows:
+            table.add_row(f"[dim]{label}[/dim]", value)
+        console.print(table)
+
+        if output:
+            import json
+            with open(output, "w") as f:
+                json.dump(data.model_dump(mode="json"), f, indent=2, default=str)
+            console.print(f"[green]Saved to {output}[/green]")
+    finally:
+        db.close()
+
+
+@app.command(name="enrich-bulk")
+def enrich_bulk(
+    domains_file: str = typer.Argument(..., help="CSV or YAML file with domains to enrich"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Bulk enrich domains from a CSV/YAML file."""
+    _setup_logging(verbose)
+
+    api_config = load_api_config()
+    if not api_config.has_anthropic:
+        console.print("[red]Error: ANTHROPIC_API_KEY is required.[/red]")
+        raise typer.Exit(1)
+
+    from src.enrichment.engine import enrich_domain
+    from src.database import Database
+    import csv
+    import yaml
+
+    db = Database(api_config.db_path)
+    domains = []
+
+    try:
+        if domains_file.endswith(".csv"):
+            with open(domains_file) as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    d = row.get("domain") or row.get("Domain")
+                    if d:
+                        domains.append({"domain": d.strip(), "company_name": row.get("company_name")})
+        else:
+            with open(domains_file) as f:
+                data = yaml.safe_load(f)
+            if isinstance(data, list):
+                domains = data
+            elif isinstance(data, dict):
+                domains = data.get("domains", [])
+
+        if not domains:
+            console.print("[red]No domains found in file.[/red]")
+            return
+
+        console.print(f"[blue]Enriching {len(domains)} domains...[/blue]")
+        from rich.progress import Progress
+
+        with Progress() as progress:
+            task = progress.add_task("Enriching...", total=len(domains))
+            for entry in domains:
+                domain = entry.get("domain", "")
+                company_name = entry.get("company_name")
+                if not domain:
+                    continue
+                progress.update(task, description=f"Enriching {domain}")
+                try:
+                    data = enrich_domain(domain, company_name)
+                    db.upsert_enrichment(data)
+                    progress.advance(task)
+                except Exception as e:
+                    console.print(f"[red]Error enriching {domain}: {e}[/red]")
+                    progress.advance(task)
+
+        console.print(f"[green]Enrichment complete. {len(domains)} domains processed.[/green]")
+    finally:
+        db.close()
+
+
+@app.command(name="serve")
+def serve(
+    port: int = typer.Option(8000, "--port", "-p", help="Port to run on"),
+    host: str = typer.Option("0.0.0.0", "--host", help="Host to bind to"),
+):
+    """Start the web server (FastAPI + React UI)."""
+    import uvicorn
+    console.print(f"[blue]Starting Prospect Intelligence server on {host}:{port}[/blue]")
+    console.print(f"[dim]Open http://localhost:{port} in your browser[/dim]")
+    uvicorn.run("src.web.main:app", host=host, port=port, reload=True)
+
+
 if __name__ == "__main__":
     app()

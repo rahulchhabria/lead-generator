@@ -188,3 +188,15 @@ class Campaign(BaseModel):
     current_stage: PipelineStage = PipelineStage.DISCOVERY
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------------------
+# Enrichment stage
+# ---------------------------------------------------------------------------
+
+class EnrichmentStage(str, Enum):
+    """Stages of an enrichment job."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
