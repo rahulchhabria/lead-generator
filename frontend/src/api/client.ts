@@ -51,6 +51,7 @@ export const api = {
   },
   contacts: {
     list: (limit = 100) => request<Contact[]>(`/contacts/?limit=${limit}`),
+    byDomain: (domain: string) => request<Contact[]>(`/contacts/?domain=${encodeURIComponent(domain)}`),
     get: (id: number) => request<ContactDetail>(`/contacts/${id}`),
   },
   exports: {

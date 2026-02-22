@@ -23,6 +23,30 @@ DEPT_KEYWORDS = {
     "operations": ["operations", "finance", "legal", "hr", "people", "recruiting", "talent"],
 }
 
+_NAV_WORDS = {
+    "login", "log in", "log out", "sign up", "sign in", "signup", "signin",
+    "contact", "pricing", "about", "home", "blog", "docs", "documentation",
+    "open app", "download", "resources", "customers", "product", "features",
+    "company", "terms", "privacy", "press", "newsletter", "get started",
+    "book a demo", "request a demo", "see how", "learn more", "view all",
+    "read more", "click here", "back", "next", "previous", "search",
+    "changelog", "status", "help", "support", "security", "enterprise",
+    "try for free", "start for free", "get a demo", "contact us",
+}
+
+_JOB_TITLE_WORDS = [
+    "engineer", "developer", "designer", "manager", "director", "analyst",
+    "scientist", "researcher", "lead", "head of", "vp ", "vice president",
+    "coordinator", "specialist", "associate", "consultant", "architect",
+    "recruiter", "sales", "marketing", "product manager", "ux ", "ui ",
+    "data ", "security", "finance", "legal", "writer", "editor",
+    "account executive", "sdr", "bdr", "devops", "sre", "backend",
+    "frontend", "fullstack", "full stack", "full-stack", "software", "mobile",
+    "ios", "android", "ml ", "ai ", "infrastructure", "platform",
+    "operations", "ops ", "people", "talent", "customer success",
+    "implementation", "onboarding", "intern", "administrative", "counsel",
+]
+
 SKILL_PATTERNS = [
     r"\b(python|javascript|typescript|react|node\.?js|golang|rust|java|kotlin|swift|ruby|php)\b",
     r"\b(aws|gcp|azure|kubernetes|docker|terraform)\b",
@@ -130,18 +154,24 @@ def _scrape_careers_page(domain: str) -> list[JobPosting]:
             continue
         soup = BeautifulSoup(html, "html.parser")
         jobs = []
-        for item in soup.select("li, .job, .position, .opening, [class*='job'], [class*='role']")[:40]:
+        for item in soup.select("li, .job, .position, .opening, [class*='job'], [class*='role']")[:60]:
             link = item.find("a")
             if not link:
                 continue
             title = link.get_text(strip=True)
-            if 5 < len(title) < 150:
-                jobs.append(JobPosting(
-                    title=title[:100],
-                    department=_classify_department(title),
-                    url=link.get("href", ""),
-                ))
-        if len(jobs) > 3:
+            title_lower = title.lower()
+            if not (5 < len(title) < 120):
+                continue
+            if any(nav in title_lower for nav in _NAV_WORDS):
+                continue
+            if not any(jw in title_lower for jw in _JOB_TITLE_WORDS):
+                continue
+            jobs.append(JobPosting(
+                title=title[:100],
+                department=_classify_department(title),
+                url=link.get("href", ""),
+            ))
+        if len(jobs) > 1:
             return jobs[:50]
     return []
 

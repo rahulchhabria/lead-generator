@@ -16,11 +16,23 @@ def _get_db():
 
 
 @router.get("/")
-def list_contacts(campaign_id: Optional[str] = None, status: Optional[str] = None, limit: int = 100):
+def list_contacts(campaign_id: Optional[str] = None, status: Optional[str] = None,
+                  domain: Optional[str] = None, limit: int = 100):
     from src.models import LeadStatus
     db = _get_db()
     try:
-        if campaign_id:
+        if domain:
+            rows = db.conn.execute("SELECT id FROM accounts WHERE domain = ?", (domain,)).fetchall()
+            account_ids = [r[0] for r in rows]
+            contacts = []
+            for aid in account_ids:
+                contacts.extend(db.get_contacts_for_account(aid))
+            accounts = {}
+            for aid in account_ids:
+                a = db.get_account(aid)
+                if a:
+                    accounts[a.id] = a
+        elif campaign_id:
             st = LeadStatus(status) if status else None
             contacts = db.get_contacts(campaign_id, st)
             accounts = {a.id: a for a in db.get_accounts(campaign_id)}
