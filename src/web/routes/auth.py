@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -101,6 +102,17 @@ async def login(req: LoginRequest):
             raise HTTPException(
                 status_code=403,
                 detail="No account found. Ask your team admin for an invitation.",
+            )
+
+        # Check invitation expiry
+        expires_at = datetime.fromisoformat(invitation["expires_at"])
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_at:
+            db.update_invitation_status(invitation["id"], "expired")
+            raise HTTPException(
+                status_code=403,
+                detail="Your invitation has expired. Ask your admin for a new one.",
             )
 
         # Verify email domain matches team

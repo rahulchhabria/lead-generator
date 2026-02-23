@@ -37,7 +37,7 @@ def enrich_single(req: EnrichRequest, current_user: dict = Depends(get_current_u
     db = _get_db()
     try:
         if not req.force_refresh:
-            existing = db.get_enrichment(req.domain)
+            existing = db.get_enrichment(req.domain, team_id=current_user["team_id"])
             if existing:
                 return existing
 
@@ -145,7 +145,7 @@ def get_enrichment(domain: str, force_refresh: bool = False,
     db = _get_db()
     try:
         if not force_refresh:
-            existing = db.get_enrichment(domain)
+            existing = db.get_enrichment(domain, team_id=current_user["team_id"])
             if existing:
                 return existing
         from src.enrichment.engine import enrich_domain

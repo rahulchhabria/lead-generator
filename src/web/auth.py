@@ -56,7 +56,9 @@ async def verify_google_token(id_token: str) -> dict:
     data = resp.json()
 
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-    if google_client_id and data.get("aud") != google_client_id:
+    if not google_client_id:
+        raise HTTPException(status_code=500, detail="Server misconfigured: GOOGLE_CLIENT_ID not set")
+    if data.get("aud") != google_client_id:
         raise HTTPException(status_code=401, detail="Token audience mismatch")
 
     if data.get("email_verified") != "true" and data.get("email_verified") is not True:

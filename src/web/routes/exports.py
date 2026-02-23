@@ -28,7 +28,7 @@ def export_campaign_csv(campaign_id: str, current_user: dict = Depends(get_curre
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
         rows = db.get_export_data(campaign_id)

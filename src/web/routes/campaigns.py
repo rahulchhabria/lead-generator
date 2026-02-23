@@ -64,7 +64,7 @@ def get_campaign(campaign_id: str, current_user: dict = Depends(get_current_user
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         summary = _campaign_summary(campaign, db)
         if campaign.icp_json:
@@ -144,7 +144,7 @@ def advance_campaign(campaign_id: str, current_user: dict = Depends(get_current_
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         config = CampaignConfig.model_validate_json(campaign.config_json or "{}")
     finally:
@@ -186,7 +186,7 @@ def get_campaign_accounts(campaign_id: str, status: Optional[str] = None,
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         st = LeadStatus(status) if status else None
         accounts = db.get_accounts(campaign_id, st)
@@ -216,7 +216,7 @@ def get_campaign_contacts(campaign_id: str, status: Optional[str] = None,
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         st = LeadStatus(status) if status else None
         contacts = db.get_contacts(campaign_id, st)
@@ -243,7 +243,7 @@ def get_campaign_emails(campaign_id: str, current_user: dict = Depends(get_curre
     db = _get_db()
     try:
         owner = db.get_campaign_owner(campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         emails = db.get_draft_emails(campaign_id)
         contacts = {c.id: c for c in db.get_contacts(campaign_id)}
@@ -271,6 +271,9 @@ def review_accounts(campaign_id: str, req: dict, current_user: dict = Depends(ge
     from src.models import LeadStatus
     db = _get_db()
     try:
+        owner = db.get_campaign_owner(campaign_id)
+        if owner is None or owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         approved_ids = req.get("approved_ids", [])
         rejected_ids = req.get("rejected_ids", [])
         if approved_ids:
@@ -287,6 +290,9 @@ def review_contacts(campaign_id: str, req: dict, current_user: dict = Depends(ge
     from src.models import LeadStatus
     db = _get_db()
     try:
+        owner = db.get_campaign_owner(campaign_id)
+        if owner is None or owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         approved_ids = req.get("approved_ids", [])
         rejected_ids = req.get("rejected_ids", [])
         if approved_ids:
@@ -303,6 +309,9 @@ def review_emails(campaign_id: str, req: dict, current_user: dict = Depends(get_
     from src.models import LeadStatus
     db = _get_db()
     try:
+        owner = db.get_campaign_owner(campaign_id)
+        if owner is None or owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         approved_ids = req.get("approved_ids", [])
         rejected_ids = req.get("rejected_ids", [])
         if approved_ids:

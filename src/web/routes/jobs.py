@@ -17,6 +17,6 @@ def list_jobs(current_user: dict = Depends(get_current_user)):
 def get_job(job_id: str, current_user: dict = Depends(get_current_user)):
     """Get status of a background job."""
     job = job_manager.get_job(job_id)
-    if not job:
+    if not job or job.user_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="Job not found")
     return job.to_dict()

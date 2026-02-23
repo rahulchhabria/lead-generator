@@ -253,6 +253,7 @@ class Database:
         self, user_id: str, team_id: str, email: str, name: str,
         avatar_url: Optional[str] = None, role: str = "member",
     ) -> dict:
+        email = email.lower()
         self.conn.execute(
             """INSERT INTO users (id, team_id, email, name, avatar_url, role)
                VALUES (?, ?, ?, ?, ?, ?)""",
@@ -377,13 +378,7 @@ class Database:
         ).fetchone()
         if not row:
             return None
-        return Campaign(
-            id=row["id"],
-            icp_json=row["icp_json"],
-            domains_json=row["domains_json"],
-            config_json=row["config_json"],
-            current_stage=PipelineStage(row["current_stage"]),
-        )
+        return self._row_to_campaign(row)
 
     def update_campaign_stage(self, campaign_id: str, stage: PipelineStage):
         self.conn.execute(
@@ -402,16 +397,7 @@ class Database:
             rows = self.conn.execute(
                 "SELECT * FROM campaigns ORDER BY created_at DESC"
             ).fetchall()
-        return [
-            Campaign(
-                id=r["id"],
-                icp_json=r["icp_json"],
-                domains_json=r["domains_json"],
-                config_json=r["config_json"],
-                current_stage=PipelineStage(r["current_stage"]),
-            )
-            for r in rows
-        ]
+        return [self._row_to_campaign(r) for r in rows]
 
     def get_campaign_owner(self, campaign_id: str) -> Optional[str]:
         """Get the user_id of the campaign owner."""
@@ -421,6 +407,23 @@ class Database:
         if not row:
             return None
         return row["user_id"]
+
+    def _row_to_campaign(self, row) -> Campaign:
+        created_at = row["created_at"]
+        updated_at = row["updated_at"]
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        if isinstance(updated_at, str):
+            updated_at = datetime.fromisoformat(updated_at)
+        return Campaign(
+            id=row["id"],
+            icp_json=row["icp_json"],
+            domains_json=row["domains_json"],
+            config_json=row["config_json"],
+            current_stage=PipelineStage(row["current_stage"]),
+            created_at=created_at or datetime.now(timezone.utc),
+            updated_at=updated_at or datetime.now(timezone.utc),
+        )
 
     # --- Accounts ---
 
@@ -883,12 +886,18 @@ class Database:
         )
         self.conn.commit()
 
-    def get_enrichment(self, domain: str) -> Optional[dict]:
-        """Get enrichment data for a domain as a dict."""
+    def get_enrichment(self, domain: str, team_id: Optional[str] = None) -> Optional[dict]:
+        """Get enrichment data for a domain as a dict, optionally filtered by team."""
         import json
-        row = self.conn.execute(
-            "SELECT * FROM enrichment_data WHERE domain = ?", (domain,)
-        ).fetchone()
+        if team_id:
+            row = self.conn.execute(
+                "SELECT * FROM enrichment_data WHERE domain = ? AND team_id = ?",
+                (domain, team_id),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT * FROM enrichment_data WHERE domain = ?", (domain,)
+            ).fetchone()
         if not row:
             return None
         return self._enrichment_row_to_dict(row)

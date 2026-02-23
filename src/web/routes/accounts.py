@@ -34,7 +34,7 @@ def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = Non
     try:
         if campaign_id:
             owner = db.get_campaign_owner(campaign_id)
-            if owner and owner != current_user["id"]:
+            if owner is None or owner != current_user["id"]:
                 raise HTTPException(status_code=403, detail="Access denied")
             st = LeadStatus(status) if status else None
             accounts = db.get_accounts(campaign_id, st)
@@ -66,7 +66,7 @@ def get_account(account_id: int, current_user: dict = Depends(get_current_user))
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
         owner = db.get_campaign_owner(account.campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
         result = {
@@ -108,7 +108,7 @@ def trigger_enrichment(account_id: int, current_user: dict = Depends(get_current
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
         owner = db.get_campaign_owner(account.campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         domain = account.domain
         company_name = account.company_name

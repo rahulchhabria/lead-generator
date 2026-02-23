@@ -43,7 +43,7 @@ def list_contacts(campaign_id: Optional[str] = None, status: Optional[str] = Non
                     accounts[a.id] = a
         elif campaign_id:
             owner = db.get_campaign_owner(campaign_id)
-            if owner and owner != current_user["id"]:
+            if owner is None or owner != current_user["id"]:
                 raise HTTPException(status_code=403, detail="Access denied")
             st = LeadStatus(status) if status else None
             contacts = db.get_contacts(campaign_id, st)
@@ -83,7 +83,7 @@ def get_contact(contact_id: int, current_user: dict = Depends(get_current_user))
         if not contact:
             raise HTTPException(status_code=404, detail="Contact not found")
         owner = db.get_campaign_owner(contact.campaign_id)
-        if owner and owner != current_user["id"]:
+        if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
         account = db.get_account(contact.account_id)
