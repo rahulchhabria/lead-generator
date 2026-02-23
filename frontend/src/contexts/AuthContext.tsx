@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { api, User, Team } from '../api/client'
 
 interface AuthState {
@@ -18,6 +19,7 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [state, setState] = useState<AuthState>({
     user: null,
     team: null,
@@ -82,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem('token')
+    queryClient.clear()
     setState({
       user: null,
       team: null,
@@ -89,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: false,
     })
-  }, [])
+  }, [queryClient])
 
   return (
     <AuthContext.Provider value={{ ...state, login, signup, logout }}>

@@ -39,6 +39,7 @@ class Pipeline:
         campaign_config: CampaignConfig,
         on_status: Callable[[str], None] | None = None,
         on_review: Callable[[str, list], list[int]] | None = None,
+        team_id: Optional[str] = None,
     ):
         """
         Args:
@@ -54,6 +55,7 @@ class Pipeline:
         self.config = campaign_config
         self.on_status = on_status or (lambda msg: None)
         self.on_review = on_review
+        self.team_id = team_id
         self.client = anthropic.Anthropic(api_key=api_config.anthropic_api_key)
         self.agent = BaseAgent(self.client, api_config.claude_model)
 
@@ -255,7 +257,7 @@ class Pipeline:
         for account in to_enrich:
             try:
                 data = enrich_domain(account.domain, account.company_name)
-                self.db.upsert_enrichment(data)
+                self.db.upsert_enrichment(data, team_id=self.team_id)
                 enriched += 1
             except Exception as e:
                 logger.warning(f"Enrichment failed for {account.domain}: {e}")

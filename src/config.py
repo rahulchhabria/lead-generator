@@ -41,6 +41,10 @@ class APIConfig:
     def has_github(self) -> bool:
         return bool(self.github_token)
 
+    @property
+    def has_secret_key(self) -> bool:
+        return bool(self.secret_key) and len(self.secret_key) >= 32
+
     def api_status_line(self) -> dict[str, str]:
         """Return status for each API for display."""
         return {

@@ -180,7 +180,7 @@ class TestDisabledUserBlocked:
 
     @patch("src.web.routes.auth.verify_google_token", new_callable=AsyncMock)
     def test_disabled_user_blocked(self, mock_verify, app_client):
-        client, db_path = app_client
+        client, _db_path = app_client
 
         # Admin signs up
         mock_verify.return_value = _make_google_mock("admin@newco.com", "Admin")
@@ -271,7 +271,7 @@ class TestJobIsolationE2E:
 
     @patch("src.web.routes.auth.verify_google_token", new_callable=AsyncMock)
     def test_job_isolation(self, mock_verify, app_client):
-        client, db_path = app_client
+        client, _db_path = app_client
         from src.web.background import job_manager
 
         # Create two users

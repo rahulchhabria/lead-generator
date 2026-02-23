@@ -23,6 +23,11 @@ const navItems = [
   { to: '/contacts', label: 'Contacts', icon: Users },
 ]
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  return user?.role === 'admin' ? <>{children}</> : <Navigate to="/" replace />
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
   const location = useLocation()
@@ -127,7 +132,7 @@ function AuthenticatedApp() {
             <Route path="/accounts/:id" element={<AccountDetail />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactDetail />} />
-            <Route path="/team" element={<TeamManagement />} />
+            <Route path="/team" element={<AdminRoute><TeamManagement /></AdminRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

@@ -58,7 +58,7 @@ class TestJobAuth:
     def test_get_job_owner(self, app_client):
         """Owner can access their job by ID."""
         client, db_path = app_client
-        user_a, user_b = _setup_two_users(db_path)
+        user_a, _user_b = _setup_two_users(db_path)
 
         job = job_manager.create_job("My Job", user_id=user_a["id"])
 
@@ -79,14 +79,14 @@ class TestJobAuth:
     def test_nonexistent_job_404(self, app_client):
         """Requesting a job ID that doesn't exist returns 404."""
         client, db_path = app_client
-        user_a, user_b = _setup_two_users(db_path)
+        user_a, _user_b = _setup_two_users(db_path)
 
         resp = client.get("/api/jobs/nonexistent-id", headers=_headers(user_a))
         assert resp.status_code == 404
 
     def test_unauthenticated_401(self, app_client):
         """Requests without a token are rejected with 401."""
-        client, db_path = app_client
+        client, _db_path = app_client
 
         resp = client.get("/api/jobs/")
         assert resp.status_code == 401

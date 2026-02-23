@@ -103,10 +103,11 @@ def create_campaign(req: CreateCampaignRequest, current_user: dict = Depends(get
 
     config = CampaignConfig(**(req.config or {}))
     user_id = current_user["id"]
+    team_id = current_user.get("team_id")
 
     job = job_manager.create_job("Campaign starting…", user_id=user_id)
 
-    def _run_pipeline(job, icp, domain_list, config, user_id):
+    def _run_pipeline(job, icp, domain_list, config, user_id, team_id):
         from src.pipeline import Pipeline
         from src.config import load_api_config
         from src.database import Database
@@ -120,13 +121,14 @@ def create_campaign(req: CreateCampaignRequest, current_user: dict = Depends(get
                 campaign_config=config,
                 on_status=lambda msg: job.update(message=msg),
                 on_review=None,  # auto-approve in API mode
+                team_id=team_id,
             )
             campaign_id = pipeline.run_new(icp=icp, domains=domain_list, user_id=user_id)
             job.result = {"campaign_id": campaign_id}
         finally:
             db.close()
 
-    job_manager.run_in_thread(job, _run_pipeline, icp, domain_list, config, user_id)
+    job_manager.run_in_thread(job, _run_pipeline, icp, domain_list, config, user_id, team_id)
     return {"campaign_id": None, "job_id": job.job_id, "status": "started"}
 
 
@@ -151,8 +153,9 @@ def advance_campaign(campaign_id: str, current_user: dict = Depends(get_current_
         db.close()
 
     job = job_manager.create_job(f"Resume {campaign_id}", user_id=current_user["id"])
+    team_id = current_user.get("team_id")
 
-    def _resume(job, campaign_id, config):
+    def _resume(job, campaign_id, config, team_id):
         from src.pipeline import Pipeline
         from src.config import load_api_config
         from src.database import Database
@@ -166,13 +169,14 @@ def advance_campaign(campaign_id: str, current_user: dict = Depends(get_current_
                 campaign_config=config,
                 on_status=lambda msg: job.update(message=msg),
                 on_review=None,
+                team_id=team_id,
             )
             pipeline.resume(campaign_id)
             job.result = {"campaign_id": campaign_id}
         finally:
             db.close()
 
-    job_manager.run_in_thread(job, _resume, campaign_id, config)
+    job_manager.run_in_thread(job, _resume, campaign_id, config, team_id)
     return {"job_id": job.job_id, "status": "resuming"}
 
 
@@ -242,6 +246,9 @@ def get_campaign_contacts(campaign_id: str, status: Optional[str] = None,
 def get_campaign_emails(campaign_id: str, current_user: dict = Depends(get_current_user)):
     db = _get_db()
     try:
+        campaign = db.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
         if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")

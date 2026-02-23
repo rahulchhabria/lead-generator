@@ -125,7 +125,7 @@ class TestCampaignOwnership:
     def test_get_campaign_owner_access(self, app_client):
         """Owner can retrieve their own campaign by ID."""
         client, db_path = app_client
-        user_a, user_b = _setup_two_users(db_path)
+        user_a, _user_b = _setup_two_users(db_path)
 
         cid = _create_campaign(db_path, user_a["id"])
         resp = client.get(f"/api/campaigns/{cid}", headers=_headers(user_a))
@@ -143,7 +143,7 @@ class TestCampaignOwnership:
 
     def test_unauthenticated_401(self, app_client):
         """Requests without a token are rejected with 401."""
-        client, db_path = app_client
+        client, _db_path = app_client
 
         resp = client.get("/api/campaigns/")
         assert resp.status_code == 401
@@ -156,7 +156,7 @@ class TestReviewAuth:
     def test_review_accounts_owner_succeeds(self, app_client):
         """Bug #3 fix: campaign owner can review accounts."""
         client, db_path = app_client
-        user_a, user_b = _setup_two_users(db_path)
+        user_a, _user_b = _setup_two_users(db_path)
 
         cid = _create_campaign(db_path, user_a["id"])
         acct_id = _create_account(db_path, cid)
@@ -227,7 +227,7 @@ class TestReviewAuth:
     def test_review_null_owner_campaign_403(self, app_client):
         """Bug #7 fix: campaign with NULL user_id denies access to any user."""
         client, db_path = app_client
-        user_a, user_b = _setup_two_users(db_path)
+        user_a, _user_b = _setup_two_users(db_path)
 
         # Insert campaign with NULL user_id directly via SQL
         campaign_id = str(uuid.uuid4())

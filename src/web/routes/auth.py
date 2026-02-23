@@ -55,8 +55,11 @@ async def signup(req: SignupRequest):
             raise HTTPException(status_code=409, detail="User already exists")
 
         # Create team
+        team_name = req.team_name.strip()
+        if not team_name:
+            raise HTTPException(status_code=400, detail="Team name is required")
         team_id = str(uuid.uuid4())
-        team = db.create_team(team_id, req.team_name.strip(), domain)
+        team = db.create_team(team_id, team_name, domain)
 
         # Create admin user
         user_id = str(uuid.uuid4())
