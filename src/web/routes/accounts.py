@@ -35,6 +35,8 @@ def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = Non
     db = _get_db()
     try:
         if campaign_id:
+            if not db.get_campaign(campaign_id):
+                raise HTTPException(status_code=404, detail="Campaign not found")
             owner = db.get_campaign_owner(campaign_id)
             if owner is None or owner != current_user["id"]:
                 raise HTTPException(status_code=403, detail="Access denied")

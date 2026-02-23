@@ -876,7 +876,7 @@ class Database:
                 ai_insights=excluded.ai_insights, data_quality=excluded.data_quality,
                 confidence_score=excluded.confidence_score, sources=excluded.sources,
                 last_enriched_at=excluded.last_enriched_at, enrichment_error=excluded.enrichment_error,
-                team_id=COALESCE(excluded.team_id, enrichment_data.team_id)""",
+                team_id=enrichment_data.team_id""",
             (
                 data.domain, data.company_name, data.description, data.long_description,
                 data.founded_year, data.employee_count, data.employee_count_range, data.engineering_count,
