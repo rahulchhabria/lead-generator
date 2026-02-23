@@ -1,8 +1,9 @@
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Building2, Users, Megaphone, Search, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Building2, Users, Megaphone, Search, Menu, X, Shield, LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { api } from './api/client'
+import { useAuth } from './contexts/AuthContext'
 import Dashboard from './pages/Dashboard'
 import Enrichment from './pages/Enrichment'
 import Campaigns from './pages/Campaigns'
@@ -11,6 +12,8 @@ import Accounts from './pages/Accounts'
 import AccountDetail from './pages/AccountDetail'
 import Contacts from './pages/Contacts'
 import ContactDetail from './pages/ContactDetail'
+import Login from './pages/Login'
+import TeamManagement from './pages/TeamManagement'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
@@ -20,15 +23,38 @@ const navItems = [
   { to: '/contacts', label: 'Contacts', icon: Users },
 ]
 
-export default function App() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="animate-spin h-8 w-8 border-2 border-brand-600 border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  return <>{children}</>
+}
+
+function AuthenticatedApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { data: status } = useQuery({ queryKey: ['status'], queryFn: api.status, staleTime: 60_000 })
+  const { user, team, logout } = useAuth()
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:translate-x-0`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-          <div><h1 className="text-base font-bold text-brand-700">Prospect Intel</h1><p className="text-xs text-gray-500">B2B Research Platform</p></div>
+          <div>
+            <h1 className="text-base font-bold text-brand-700">Prospect Intel</h1>
+            <p className="text-xs text-gray-500">{team?.name || 'B2B Research Platform'}</p>
+          </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-400"><X size={20} /></button>
         </div>
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
@@ -38,6 +64,12 @@ export default function App() {
               <Icon size={18} />{label}
             </NavLink>
           ))}
+          {user?.role === 'admin' && (
+            <NavLink to="/team" onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-brand-50 text-brand-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+              <Shield size={18} />Team
+            </NavLink>
+          )}
         </nav>
         {status && (
           <div className="px-4 py-4 border-t border-gray-200">
@@ -50,6 +82,32 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {user && (
+          <div className="px-4 py-4 border-t border-gray-200">
+            <div className="flex items-center gap-3 mb-3">
+              {user.avatar_url ? (
+                <img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
+                  <span className="text-xs font-medium text-brand-700">
+                    {user.name.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
+                <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <LogOut size={16} />
+              Sign Out
+            </button>
           </div>
         )}
       </aside>
@@ -69,10 +127,24 @@ export default function App() {
             <Route path="/accounts/:id" element={<AccountDetail />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactDetail />} />
+            <Route path="/team" element={<TeamManagement />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/*" element={
+        <ProtectedRoute>
+          <AuthenticatedApp />
+        </ProtectedRoute>
+      } />
+    </Routes>
   )
 }

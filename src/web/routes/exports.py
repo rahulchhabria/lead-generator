@@ -4,8 +4,10 @@ from __future__ import annotations
 import csv
 import io
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+
+from src.web.auth import get_current_user
 
 router = APIRouter(tags=["exports"])
 
@@ -18,13 +20,16 @@ def _get_db():
 
 
 @router.get("/{campaign_id}/csv")
-def export_campaign_csv(campaign_id: str):
+def export_campaign_csv(campaign_id: str, current_user: dict = Depends(get_current_user)):
     """Export approved leads for a campaign as CSV."""
     db = _get_db()
     try:
         campaign = db.get_campaign(campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
+        owner = db.get_campaign_owner(campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         rows = db.get_export_data(campaign_id)
         if not rows:
@@ -46,11 +51,11 @@ def export_campaign_csv(campaign_id: str):
 
 
 @router.get("/enrichment/csv")
-def export_enrichment_csv():
-    """Export all enrichment data as CSV."""
+def export_enrichment_csv(current_user: dict = Depends(get_current_user)):
+    """Export enrichment data for the team as CSV."""
     db = _get_db()
     try:
-        records = db.list_enrichments(limit=10000)
+        records = db.list_enrichments(limit=10000, team_id=current_user["team_id"])
         if not records:
             raise HTTPException(status_code=404, detail="No enrichment data found")
 

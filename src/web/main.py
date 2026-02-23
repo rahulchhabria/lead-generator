@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from src.web.routes import campaigns, enrichment, accounts, contacts, exports, jobs
+from src.web.routes import auth, campaigns, enrichment, accounts, contacts, exports, jobs, team
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ app.add_middleware(
 )
 
 # Register API routers
+app.include_router(auth.router, prefix="/api/auth")
+app.include_router(team.router, prefix="/api/team")
 app.include_router(campaigns.router, prefix="/api/campaigns")
 app.include_router(enrichment.router, prefix="/api/enrichment")
 app.include_router(accounts.router, prefix="/api/accounts")
@@ -57,6 +59,14 @@ def api_status():
         "serper": bool(os.environ.get("SERPER_API_KEY")),
         "hunter": bool(os.environ.get("HUNTER_API_KEY")),
         "github": bool(os.environ.get("GITHUB_TOKEN")),
+    }
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """Return public auth configuration for the frontend."""
+    return {
+        "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
     }
 
 

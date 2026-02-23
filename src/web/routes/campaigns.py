@@ -5,8 +5,10 @@ import json
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from src.web.auth import get_current_user
 
 router = APIRouter(tags=["campaigns"])
 
@@ -45,22 +47,25 @@ def _campaign_summary(campaign, db) -> dict:
 
 
 @router.get("/")
-def list_campaigns():
+def list_campaigns(current_user: dict = Depends(get_current_user)):
     db = _get_db()
     try:
-        campaigns = db.list_campaigns()
+        campaigns = db.list_campaigns(user_id=current_user["id"])
         return [_campaign_summary(c, db) for c in campaigns]
     finally:
         db.close()
 
 
 @router.get("/{campaign_id}")
-def get_campaign(campaign_id: str):
+def get_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
     db = _get_db()
     try:
         campaign = db.get_campaign(campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
+        owner = db.get_campaign_owner(campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         summary = _campaign_summary(campaign, db)
         if campaign.icp_json:
             summary["icp"] = json.loads(campaign.icp_json)
@@ -82,7 +87,7 @@ class CreateCampaignRequest(BaseModel):
 
 
 @router.post("/")
-def create_campaign(req: CreateCampaignRequest):
+def create_campaign(req: CreateCampaignRequest, current_user: dict = Depends(get_current_user)):
     """Create and start a new campaign (runs pipeline in background)."""
     from src.web.background import job_manager
     from src.models import ICPDefinition, DomainList, DomainEntry, CampaignConfig
@@ -97,10 +102,11 @@ def create_campaign(req: CreateCampaignRequest):
         domain_list = DomainList(target_roles=req.target_roles or [], domains=entries)
 
     config = CampaignConfig(**(req.config or {}))
+    user_id = current_user["id"]
 
-    job = job_manager.create_job("Campaign starting…")
+    job = job_manager.create_job("Campaign starting…", user_id=user_id)
 
-    def _run_pipeline(job, icp, domain_list, config):
+    def _run_pipeline(job, icp, domain_list, config, user_id):
         from src.pipeline import Pipeline
         from src.config import load_api_config
         from src.database import Database
@@ -115,17 +121,17 @@ def create_campaign(req: CreateCampaignRequest):
                 on_status=lambda msg: job.update(message=msg),
                 on_review=None,  # auto-approve in API mode
             )
-            campaign_id = pipeline.run_new(icp=icp, domains=domain_list)
+            campaign_id = pipeline.run_new(icp=icp, domains=domain_list, user_id=user_id)
             job.result = {"campaign_id": campaign_id}
         finally:
             db.close()
 
-    job_manager.run_in_thread(job, _run_pipeline, icp, domain_list, config)
+    job_manager.run_in_thread(job, _run_pipeline, icp, domain_list, config, user_id)
     return {"campaign_id": None, "job_id": job.job_id, "status": "started"}
 
 
 @router.post("/{campaign_id}/advance")
-def advance_campaign(campaign_id: str):
+def advance_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
     """Resume a campaign from its last checkpoint."""
     from src.web.background import job_manager
     from src.models import CampaignConfig
@@ -137,11 +143,14 @@ def advance_campaign(campaign_id: str):
         campaign = db.get_campaign(campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
+        owner = db.get_campaign_owner(campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         config = CampaignConfig.model_validate_json(campaign.config_json or "{}")
     finally:
         db.close()
 
-    job = job_manager.create_job(f"Resume {campaign_id}")
+    job = job_manager.create_job(f"Resume {campaign_id}", user_id=current_user["id"])
 
     def _resume(job, campaign_id, config):
         from src.pipeline import Pipeline
@@ -168,13 +177,17 @@ def advance_campaign(campaign_id: str):
 
 
 @router.get("/{campaign_id}/accounts")
-def get_campaign_accounts(campaign_id: str, status: Optional[str] = None):
+def get_campaign_accounts(campaign_id: str, status: Optional[str] = None,
+                          current_user: dict = Depends(get_current_user)):
     from src.models import LeadStatus
     db = _get_db()
     try:
         campaign = db.get_campaign(campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
+        owner = db.get_campaign_owner(campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         st = LeadStatus(status) if status else None
         accounts = db.get_accounts(campaign_id, st)
         enriched = _enriched_domains(db)
@@ -194,13 +207,17 @@ def get_campaign_accounts(campaign_id: str, status: Optional[str] = None):
 
 
 @router.get("/{campaign_id}/contacts")
-def get_campaign_contacts(campaign_id: str, status: Optional[str] = None):
+def get_campaign_contacts(campaign_id: str, status: Optional[str] = None,
+                          current_user: dict = Depends(get_current_user)):
     from src.models import LeadStatus
     db = _get_db()
     try:
         campaign = db.get_campaign(campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
+        owner = db.get_campaign_owner(campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         st = LeadStatus(status) if status else None
         contacts = db.get_contacts(campaign_id, st)
         accounts = {a.id: a for a in db.get_accounts(campaign_id)}
@@ -222,9 +239,12 @@ def get_campaign_contacts(campaign_id: str, status: Optional[str] = None):
 
 
 @router.get("/{campaign_id}/emails")
-def get_campaign_emails(campaign_id: str):
+def get_campaign_emails(campaign_id: str, current_user: dict = Depends(get_current_user)):
     db = _get_db()
     try:
+        owner = db.get_campaign_owner(campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         emails = db.get_draft_emails(campaign_id)
         contacts = {c.id: c for c in db.get_contacts(campaign_id)}
         accounts = {a.id: a for a in db.get_accounts(campaign_id)}
@@ -247,7 +267,7 @@ def get_campaign_emails(campaign_id: str):
 
 
 @router.post("/{campaign_id}/accounts/review")
-def review_accounts(campaign_id: str, req: dict):
+def review_accounts(campaign_id: str, req: dict, current_user: dict = Depends(get_current_user)):
     from src.models import LeadStatus
     db = _get_db()
     try:
@@ -263,7 +283,7 @@ def review_accounts(campaign_id: str, req: dict):
 
 
 @router.post("/{campaign_id}/contacts/review")
-def review_contacts(campaign_id: str, req: dict):
+def review_contacts(campaign_id: str, req: dict, current_user: dict = Depends(get_current_user)):
     from src.models import LeadStatus
     db = _get_db()
     try:
@@ -279,7 +299,7 @@ def review_contacts(campaign_id: str, req: dict):
 
 
 @router.post("/{campaign_id}/emails/review")
-def review_emails(campaign_id: str, req: dict):
+def review_emails(campaign_id: str, req: dict, current_user: dict = Depends(get_current_user)):
     from src.models import LeadStatus
     db = _get_db()
     try:

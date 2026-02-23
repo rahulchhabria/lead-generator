@@ -1,10 +1,29 @@
 const BASE = '/api'
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('token')
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+  // Merge any additional headers from opts, but skip Content-Type for FormData
+  if (opts?.headers) {
+    Object.assign(headers, opts.headers)
+  }
+  // If body is FormData, remove Content-Type so browser sets multipart boundary
+  if (opts?.body instanceof FormData) {
+    delete headers['Content-Type']
+  }
+
   const resp = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
     ...opts,
+    headers,
   })
+  if (resp.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/login'
+    throw new Error('Unauthorized')
+  }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }))
     throw new Error(err.detail || `HTTP ${resp.status}`)
@@ -14,6 +33,34 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  auth: {
+    config: () => request<AuthConfig>('/auth/config'),
+    signup: (google_token: string, team_name: string) =>
+      request<AuthResponse>('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ google_token, team_name }),
+      }),
+    login: (google_token: string) =>
+      request<AuthResponse>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ google_token }),
+      }),
+    me: () => request<{ user: User; team: Team }>('/auth/me'),
+  },
+  team: {
+    get: () => request<Team>('/team/'),
+    members: () => request<User[]>('/team/members'),
+    invite: (email: string) =>
+      request<Invitation>('/team/invitations', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }),
+    invitations: () => request<Invitation[]>('/team/invitations'),
+    cancelInvitation: (id: string) =>
+      request<{ status: string }>(`/team/invitations/${id}`, { method: 'DELETE' }),
+    removeMember: (id: string) =>
+      request<{ status: string }>(`/team/members/${id}`, { method: 'DELETE' }),
+  },
   campaigns: {
     list: () => request<CampaignSummary[]>('/campaigns/'),
     get: (id: string) => request<Campaign>(`/campaigns/${id}`),
@@ -41,7 +88,19 @@ export const api = {
     upload: (file: File) => {
       const form = new FormData()
       form.append('file', file)
-      return fetch(`${BASE}/enrichment/upload`, { method: 'POST', body: form }).then(r => r.json())
+      const token = localStorage.getItem('token')
+      return fetch(`${BASE}/enrichment/upload`, {
+        method: 'POST',
+        body: form,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).then(r => {
+        if (r.status === 401) {
+          localStorage.removeItem('token')
+          window.location.href = '/login'
+          throw new Error('Unauthorized')
+        }
+        return r.json()
+      })
     },
   },
   accounts: {
@@ -66,6 +125,20 @@ export const api = {
   status: () => request<ApiStatus>('/status'),
 }
 
+// --- Auth types ---
+export interface AuthConfig { google_client_id: string }
+export interface AuthResponse { token: string; user: User; team: Team }
+export interface User {
+  id: string; team_id: string; email: string; name: string
+  avatar_url?: string; role: 'admin' | 'member'; status: string; created_at: string
+}
+export interface Team { id: string; name: string; allowed_domain: string; created_at?: string }
+export interface Invitation {
+  id: string; team_id: string; email: string; invited_by: string
+  status: string; created_at: string; expires_at: string
+}
+
+// --- Existing types ---
 export interface CampaignSummary {
   id: string; current_stage: string; created_at: string; updated_at: string
   account_count: number; contact_count: number; approved_count: number

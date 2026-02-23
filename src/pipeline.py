@@ -61,12 +61,14 @@ class Pipeline:
         self,
         icp: Optional[ICPDefinition] = None,
         domains: Optional[DomainList] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """Start a new pipeline campaign.
 
         Args:
             icp: ICP definition (for account discovery).
             domains: Domain list (skip discovery).
+            user_id: Owner user ID for multi-tenant scoping.
 
         Returns:
             campaign_id
@@ -97,7 +99,7 @@ class Pipeline:
             config_json=self.config.model_dump_json(),
             current_stage=start_stage,
         )
-        self.db.create_campaign(campaign)
+        self.db.create_campaign(campaign, user_id=user_id)
 
         self.on_status(f"Campaign {campaign_id} created. Starting at {start_stage.value}...")
 

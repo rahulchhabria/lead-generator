@@ -200,3 +200,19 @@ class EnrichmentStage(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MEMBER = "member"
+
+
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
+class InvitationStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"

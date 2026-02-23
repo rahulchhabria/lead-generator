@@ -22,6 +22,8 @@ class APIConfig:
     github_token: str = ""
     claude_model: str = "claude-sonnet-4-20250514"
     db_path: str = "data/pipeline.db"
+    google_client_id: str = ""
+    secret_key: str = ""
 
     @property
     def has_anthropic(self) -> bool:
@@ -63,6 +65,8 @@ def load_api_config(env_path: str | None = None) -> APIConfig:
         github_token=os.getenv("GITHUB_TOKEN", ""),
         claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
         db_path=os.getenv("DB_PATH", "data/pipeline.db"),
+        google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+        secret_key=os.getenv("SECRET_KEY", ""),
     )
 
 

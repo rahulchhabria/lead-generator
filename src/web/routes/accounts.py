@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from src.web.auth import get_current_user
 
 router = APIRouter(tags=["accounts"])
 
@@ -24,16 +26,20 @@ def _enriched_domains(db) -> set[str]:
 
 
 @router.get("/")
-def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = None, limit: int = 100):
+def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = None,
+                  limit: int = 100, current_user: dict = Depends(get_current_user)):
     """List accounts, optionally filtered by campaign or status."""
     from src.models import LeadStatus
     db = _get_db()
     try:
         if campaign_id:
+            owner = db.get_campaign_owner(campaign_id)
+            if owner and owner != current_user["id"]:
+                raise HTTPException(status_code=403, detail="Access denied")
             st = LeadStatus(status) if status else None
             accounts = db.get_accounts(campaign_id, st)
         else:
-            accounts = db.get_all_accounts(limit=limit)
+            accounts = db.get_all_accounts(limit=limit, user_id=current_user["id"])
 
         enriched = _enriched_domains(db)
         return [
@@ -52,13 +58,16 @@ def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = Non
 
 
 @router.get("/{account_id}")
-def get_account(account_id: int):
+def get_account(account_id: int, current_user: dict = Depends(get_current_user)):
     """Get account with full enrichment data and contacts."""
     db = _get_db()
     try:
         account = db.get_account(account_id)
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
+        owner = db.get_campaign_owner(account.campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         result = {
             "id": account.id, "campaign_id": account.campaign_id,
@@ -89,7 +98,7 @@ def get_account(account_id: int):
 
 
 @router.post("/{account_id}/enrich")
-def trigger_enrichment(account_id: int):
+def trigger_enrichment(account_id: int, current_user: dict = Depends(get_current_user)):
     """Trigger enrichment for a specific account."""
     from src.web.background import job_manager
 
@@ -98,14 +107,18 @@ def trigger_enrichment(account_id: int):
         account = db.get_account(account_id)
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
+        owner = db.get_campaign_owner(account.campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
         domain = account.domain
         company_name = account.company_name
     finally:
         db.close()
 
-    job = job_manager.create_job(f"Enrich {domain}")
+    team_id = current_user["team_id"]
+    job = job_manager.create_job(f"Enrich {domain}", user_id=current_user["id"])
 
-    def _run(job, domain, company_name):
+    def _run(job, domain, company_name, team_id):
         from src.enrichment.engine import enrich_domain
         from src.config import load_api_config
         from src.database import Database
@@ -114,10 +127,10 @@ def trigger_enrichment(account_id: int):
         try:
             job.update(message=f"Enriching {domain}...")
             data = enrich_domain(domain, company_name)
-            db.upsert_enrichment(data)
+            db.upsert_enrichment(data, team_id=team_id)
             return data.model_dump(mode="json")
         finally:
             db.close()
 
-    job_manager.run_in_thread(job, _run, domain, company_name)
+    job_manager.run_in_thread(job, _run, domain, company_name, team_id)
     return {"job_id": job.job_id, "status": "started"}

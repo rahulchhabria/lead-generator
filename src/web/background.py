@@ -11,9 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class Job:
-    def __init__(self, job_id: str, description: str):
+    def __init__(self, job_id: str, description: str, user_id: Optional[str] = None):
         self.job_id = job_id
         self.description = description
+        self.user_id = user_id
         self.status = "pending"
         self.progress = 0
         self.message: Optional[str] = None
@@ -51,9 +52,9 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
 
-    def create_job(self, description: str) -> Job:
+    def create_job(self, description: str, user_id: Optional[str] = None) -> Job:
         job_id = str(uuid.uuid4())[:8]
-        job = Job(job_id=job_id, description=description)
+        job = Job(job_id=job_id, description=description, user_id=user_id)
         with self._lock:
             self._jobs[job_id] = job
         return job
@@ -62,9 +63,12 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def list_jobs(self) -> list[Job]:
+    def list_jobs(self, user_id: Optional[str] = None) -> list[Job]:
         with self._lock:
-            return list(self._jobs.values())
+            jobs = list(self._jobs.values())
+        if user_id:
+            return [j for j in jobs if j.user_id == user_id]
+        return jobs
 
     def run_in_thread(self, job: Job, fn: Callable, *args, **kwargs) -> Job:
         """Run a function in a background thread, updating job status."""

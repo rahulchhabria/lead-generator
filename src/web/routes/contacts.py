@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from src.web.auth import get_current_user
 
 router = APIRouter(tags=["contacts"])
 
@@ -17,12 +19,19 @@ def _get_db():
 
 @router.get("/")
 def list_contacts(campaign_id: Optional[str] = None, status: Optional[str] = None,
-                  domain: Optional[str] = None, limit: int = 100):
+                  domain: Optional[str] = None, limit: int = 100,
+                  current_user: dict = Depends(get_current_user)):
     from src.models import LeadStatus
     db = _get_db()
     try:
         if domain:
-            rows = db.conn.execute("SELECT id FROM accounts WHERE domain = ?", (domain,)).fetchall()
+            # Filter by domain but only show contacts from user's campaigns
+            rows = db.conn.execute(
+                """SELECT a.id FROM accounts a
+                   JOIN campaigns c ON a.campaign_id = c.id
+                   WHERE a.domain = ? AND c.user_id = ?""",
+                (domain, current_user["id"]),
+            ).fetchall()
             account_ids = [r[0] for r in rows]
             contacts = []
             for aid in account_ids:
@@ -33,11 +42,14 @@ def list_contacts(campaign_id: Optional[str] = None, status: Optional[str] = Non
                 if a:
                     accounts[a.id] = a
         elif campaign_id:
+            owner = db.get_campaign_owner(campaign_id)
+            if owner and owner != current_user["id"]:
+                raise HTTPException(status_code=403, detail="Access denied")
             st = LeadStatus(status) if status else None
             contacts = db.get_contacts(campaign_id, st)
             accounts = {a.id: a for a in db.get_accounts(campaign_id)}
         else:
-            contacts = db.get_all_contacts(limit=limit)
+            contacts = db.get_all_contacts(limit=limit, user_id=current_user["id"])
             account_ids = list({c.account_id for c in contacts})
             accounts = {}
             for aid in account_ids:
@@ -63,13 +75,16 @@ def list_contacts(campaign_id: Optional[str] = None, status: Optional[str] = Non
 
 
 @router.get("/{contact_id}")
-def get_contact(contact_id: int):
+def get_contact(contact_id: int, current_user: dict = Depends(get_current_user)):
     """Get full contact with dossier, emails, and account enrichment."""
     db = _get_db()
     try:
         contact = db.get_contact(contact_id)
         if not contact:
             raise HTTPException(status_code=404, detail="Contact not found")
+        owner = db.get_campaign_owner(contact.campaign_id)
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
 
         account = db.get_account(contact.account_id)
         dossier = db.get_dossier_for_contact(contact_id)

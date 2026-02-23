@@ -114,6 +114,34 @@ CREATE TABLE IF NOT EXISTS suppression_list (
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS teams (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    allowed_domain TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    team_id TEXT NOT NULL REFERENCES teams(id),
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    avatar_url TEXT,
+    role TEXT NOT NULL DEFAULT 'member',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS invitations (
+    id TEXT PRIMARY KEY,
+    team_id TEXT NOT NULL REFERENCES teams(id),
+    email TEXT NOT NULL,
+    invited_by TEXT NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS enrichment_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     domain TEXT NOT NULL UNIQUE,
@@ -170,22 +198,174 @@ class Database:
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._migrate_schema()
+
+    def _migrate_schema(self):
+        """Add user/team scoping columns to existing tables."""
+        cursor = self.conn.execute("PRAGMA table_info(campaigns)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "user_id" not in columns:
+            self.conn.execute(
+                "ALTER TABLE campaigns ADD COLUMN user_id TEXT REFERENCES users(id)"
+            )
+
+        cursor = self.conn.execute("PRAGMA table_info(enrichment_data)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "team_id" not in columns:
+            self.conn.execute(
+                "ALTER TABLE enrichment_data ADD COLUMN team_id TEXT REFERENCES teams(id)"
+            )
+
+        self.conn.commit()
 
     def close(self):
         self.conn.close()
 
+    # --- Teams ---
+
+    def create_team(self, team_id: str, name: str, allowed_domain: str) -> dict:
+        self.conn.execute(
+            "INSERT INTO teams (id, name, allowed_domain) VALUES (?, ?, ?)",
+            (team_id, name, allowed_domain),
+        )
+        self.conn.commit()
+        return {"id": team_id, "name": name, "allowed_domain": allowed_domain}
+
+    def get_team(self, team_id: str) -> Optional[dict]:
+        row = self.conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if not row:
+            return None
+        return {"id": row["id"], "name": row["name"], "allowed_domain": row["allowed_domain"],
+                "created_at": row["created_at"]}
+
+    def get_team_by_domain(self, domain: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM teams WHERE allowed_domain = ?", (domain,)
+        ).fetchone()
+        if not row:
+            return None
+        return {"id": row["id"], "name": row["name"], "allowed_domain": row["allowed_domain"],
+                "created_at": row["created_at"]}
+
+    # --- Users ---
+
+    def create_user(
+        self, user_id: str, team_id: str, email: str, name: str,
+        avatar_url: Optional[str] = None, role: str = "member",
+    ) -> dict:
+        self.conn.execute(
+            """INSERT INTO users (id, team_id, email, name, avatar_url, role)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, team_id, email, name, avatar_url, role),
+        )
+        self.conn.commit()
+        return {"id": user_id, "team_id": team_id, "email": email, "name": name,
+                "avatar_url": avatar_url, "role": role, "status": "active"}
+
+    def get_user(self, user_id: str) -> Optional[dict]:
+        row = self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return None
+        return self._row_to_user(row)
+
+    def get_user_by_email(self, email: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM users WHERE email = ?", (email.lower(),)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_user(row)
+
+    def list_team_members(self, team_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM users WHERE team_id = ? ORDER BY created_at", (team_id,)
+        ).fetchall()
+        return [self._row_to_user(r) for r in rows]
+
+    def update_user_status(self, user_id: str, status: str) -> None:
+        self.conn.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+        self.conn.commit()
+
+    def delete_user(self, user_id: str) -> None:
+        self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        self.conn.commit()
+
+    def _row_to_user(self, row) -> dict:
+        return {
+            "id": row["id"], "team_id": row["team_id"], "email": row["email"],
+            "name": row["name"], "avatar_url": row["avatar_url"], "role": row["role"],
+            "status": row["status"], "created_at": row["created_at"],
+        }
+
+    # --- Invitations ---
+
+    def create_invitation(
+        self, invitation_id: str, team_id: str, email: str,
+        invited_by: str, expires_at: str,
+    ) -> dict:
+        self.conn.execute(
+            """INSERT INTO invitations (id, team_id, email, invited_by, expires_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (invitation_id, team_id, email.lower(), invited_by, expires_at),
+        )
+        self.conn.commit()
+        return {"id": invitation_id, "team_id": team_id, "email": email.lower(),
+                "invited_by": invited_by, "status": "pending", "expires_at": expires_at}
+
+    def get_invitation(self, invitation_id: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM invitations WHERE id = ?", (invitation_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_invitation(row)
+
+    def get_pending_invitation_by_email(self, email: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM invitations WHERE email = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+            (email.lower(),),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_invitation(row)
+
+    def list_team_invitations(self, team_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM invitations WHERE team_id = ? ORDER BY created_at DESC",
+            (team_id,),
+        ).fetchall()
+        return [self._row_to_invitation(r) for r in rows]
+
+    def update_invitation_status(self, invitation_id: str, status: str) -> None:
+        self.conn.execute(
+            "UPDATE invitations SET status = ? WHERE id = ?", (status, invitation_id)
+        )
+        self.conn.commit()
+
+    def delete_invitation(self, invitation_id: str) -> None:
+        self.conn.execute("DELETE FROM invitations WHERE id = ?", (invitation_id,))
+        self.conn.commit()
+
+    def _row_to_invitation(self, row) -> dict:
+        return {
+            "id": row["id"], "team_id": row["team_id"], "email": row["email"],
+            "invited_by": row["invited_by"], "status": row["status"],
+            "created_at": row["created_at"], "expires_at": row["expires_at"],
+        }
+
     # --- Campaigns ---
 
-    def create_campaign(self, campaign: Campaign) -> Campaign:
+    def create_campaign(self, campaign: Campaign, user_id: Optional[str] = None) -> Campaign:
         self.conn.execute(
-            """INSERT INTO campaigns (id, icp_json, domains_json, config_json, current_stage)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO campaigns (id, icp_json, domains_json, config_json, current_stage, user_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 campaign.id,
                 campaign.icp_json,
                 campaign.domains_json,
                 campaign.config_json,
                 campaign.current_stage.value,
+                user_id,
             ),
         )
         self.conn.commit()
@@ -212,10 +392,16 @@ class Database:
         )
         self.conn.commit()
 
-    def list_campaigns(self) -> list[Campaign]:
-        rows = self.conn.execute(
-            "SELECT * FROM campaigns ORDER BY created_at DESC"
-        ).fetchall()
+    def list_campaigns(self, user_id: Optional[str] = None) -> list[Campaign]:
+        if user_id:
+            rows = self.conn.execute(
+                "SELECT * FROM campaigns WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM campaigns ORDER BY created_at DESC"
+            ).fetchall()
         return [
             Campaign(
                 id=r["id"],
@@ -226,6 +412,15 @@ class Database:
             )
             for r in rows
         ]
+
+    def get_campaign_owner(self, campaign_id: str) -> Optional[str]:
+        """Get the user_id of the campaign owner."""
+        row = self.conn.execute(
+            "SELECT user_id FROM campaigns WHERE id = ?", (campaign_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return row["user_id"]
 
     # --- Accounts ---
 
@@ -616,7 +811,7 @@ class Database:
 
     # --- Enrichment ---
 
-    def upsert_enrichment(self, data) -> None:
+    def upsert_enrichment(self, data, team_id: Optional[str] = None) -> None:
         """Insert or update enrichment data for a domain."""
         import json
         from datetime import datetime, timezone
@@ -641,8 +836,9 @@ class Database:
                 total_funding_raised, current_valuation, latest_funding_round, all_funding_rounds,
                 ceo, founders, recent_leadership_changes, technographic, mobile_apps,
                 hiring, github_activity, linkedin_url, twitter_handle, github_url, crunchbase_url,
-                ai_insights, data_quality, confidence_score, sources, last_enriched_at, enrichment_error)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ai_insights, data_quality, confidence_score, sources, last_enriched_at, enrichment_error,
+                team_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(domain) DO UPDATE SET
                 company_name=excluded.company_name,
                 description=excluded.description,
@@ -665,7 +861,8 @@ class Database:
                 github_url=excluded.github_url, crunchbase_url=excluded.crunchbase_url,
                 ai_insights=excluded.ai_insights, data_quality=excluded.data_quality,
                 confidence_score=excluded.confidence_score, sources=excluded.sources,
-                last_enriched_at=excluded.last_enriched_at, enrichment_error=excluded.enrichment_error""",
+                last_enriched_at=excluded.last_enriched_at, enrichment_error=excluded.enrichment_error,
+                team_id=COALESCE(excluded.team_id, enrichment_data.team_id)""",
             (
                 data.domain, data.company_name, data.description, data.long_description,
                 data.founded_year, data.employee_count, data.employee_count_range, data.engineering_count,
@@ -681,6 +878,7 @@ class Database:
                 json.dumps(data.sources),
                 datetime.now(timezone.utc).isoformat(),
                 data.enrichment_error,
+                team_id,
             ),
         )
         self.conn.commit()
@@ -695,12 +893,21 @@ class Database:
             return None
         return self._enrichment_row_to_dict(row)
 
-    def list_enrichments(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        """List all enrichments with pagination."""
-        rows = self.conn.execute(
-            "SELECT * FROM enrichment_data ORDER BY last_enriched_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
-        ).fetchall()
+    def list_enrichments(
+        self, limit: int = 50, offset: int = 0, team_id: Optional[str] = None
+    ) -> list[dict]:
+        """List enrichments with pagination, optionally filtered by team."""
+        if team_id:
+            rows = self.conn.execute(
+                """SELECT * FROM enrichment_data WHERE team_id = ?
+                   ORDER BY last_enriched_at DESC LIMIT ? OFFSET ?""",
+                (team_id, limit, offset),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM enrichment_data ORDER BY last_enriched_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
         return [self._enrichment_row_to_dict(r) for r in rows]
 
     def _enrichment_row_to_dict(self, row) -> dict:
@@ -760,18 +967,36 @@ class Database:
             return None
         return self._row_to_account(row)
 
-    def get_all_accounts(self, limit: int = 100) -> list[Account]:
-        """Get accounts across all campaigns."""
-        rows = self.conn.execute(
-            "SELECT * FROM accounts ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+    def get_all_accounts(self, limit: int = 100, user_id: Optional[str] = None) -> list[Account]:
+        """Get accounts across campaigns, optionally filtered by user."""
+        if user_id:
+            rows = self.conn.execute(
+                """SELECT a.* FROM accounts a
+                   JOIN campaigns c ON a.campaign_id = c.id
+                   WHERE c.user_id = ?
+                   ORDER BY a.created_at DESC LIMIT ?""",
+                (user_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM accounts ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [self._row_to_account(r) for r in rows]
 
-    def get_all_contacts(self, limit: int = 100) -> list[Contact]:
-        """Get contacts across all campaigns."""
-        rows = self.conn.execute(
-            "SELECT * FROM contacts ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+    def get_all_contacts(self, limit: int = 100, user_id: Optional[str] = None) -> list[Contact]:
+        """Get contacts across campaigns, optionally filtered by user."""
+        if user_id:
+            rows = self.conn.execute(
+                """SELECT ct.* FROM contacts ct
+                   JOIN campaigns c ON ct.campaign_id = c.id
+                   WHERE c.user_id = ?
+                   ORDER BY ct.created_at DESC LIMIT ?""",
+                (user_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM contacts ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [self._row_to_contact(r) for r in rows]
 
     def get_contacts_for_account(self, account_id: int) -> list[Contact]:

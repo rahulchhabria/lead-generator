@@ -4,9 +4,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
+from src.web.auth import get_current_user
 from src.web.background import job_manager
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ class BulkEnrichRequest(BaseModel):
 
 
 @router.post("/single")
-def enrich_single(req: EnrichRequest):
+def enrich_single(req: EnrichRequest, current_user: dict = Depends(get_current_user)):
     """Enrich a single domain (synchronous, cached)."""
     db = _get_db()
     try:
@@ -42,7 +43,7 @@ def enrich_single(req: EnrichRequest):
 
         from src.enrichment.engine import enrich_domain
         data = enrich_domain(req.domain, req.company_name)
-        db.upsert_enrichment(data)
+        db.upsert_enrichment(data, team_id=current_user["team_id"])
         return data.model_dump(mode="json")
     except Exception as e:
         logger.exception(f"Enrichment failed for {req.domain}: {e}")
@@ -52,14 +53,17 @@ def enrich_single(req: EnrichRequest):
 
 
 @router.post("/bulk")
-def enrich_bulk(req: BulkEnrichRequest):
+def enrich_bulk(req: BulkEnrichRequest, current_user: dict = Depends(get_current_user)):
     """Start bulk enrichment job in the background."""
     if not req.domains:
         raise HTTPException(status_code=400, detail="No domains provided")
 
-    job = job_manager.create_job(f"Bulk enrichment: {len(req.domains)} domains")
+    team_id = current_user["team_id"]
+    job = job_manager.create_job(
+        f"Bulk enrichment: {len(req.domains)} domains", user_id=current_user["id"]
+    )
 
-    def _run(job, domains):
+    def _run(job, domains, team_id):
         from src.enrichment.engine import enrich_domain
         from src.config import load_api_config
         from src.database import Database
@@ -79,7 +83,7 @@ def enrich_bulk(req: BulkEnrichRequest):
                 )
                 try:
                     data = enrich_domain(domain, entry.get("company_name"))
-                    db.upsert_enrichment(data)
+                    db.upsert_enrichment(data, team_id=team_id)
                     results.append({"domain": domain, "status": "success",
                                     "company_name": data.company_name, "data_quality": data.data_quality})
                 except Exception as e:
@@ -88,12 +92,12 @@ def enrich_bulk(req: BulkEnrichRequest):
         finally:
             db.close()
 
-    job_manager.run_in_thread(job, _run, req.domains)
+    job_manager.run_in_thread(job, _run, req.domains, team_id)
     return {"job_id": job.job_id, "status": "started", "total": len(req.domains)}
 
 
 @router.post("/upload")
-async def upload_domains(file: UploadFile = File(...)):
+async def upload_domains(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload a CSV or YAML file of domains for bulk enrichment."""
     content = await file.read()
     text = content.decode("utf-8")
@@ -120,21 +124,23 @@ async def upload_domains(file: UploadFile = File(...)):
     if not domains:
         raise HTTPException(status_code=400, detail="No domains found in file")
 
-    return enrich_bulk(BulkEnrichRequest(domains=domains))
+    return enrich_bulk(BulkEnrichRequest(domains=domains), current_user=current_user)
 
 
 @router.get("/")
-def list_enrichments(limit: int = 50, offset: int = 0):
-    """List all enriched accounts."""
+def list_enrichments(limit: int = 50, offset: int = 0,
+                     current_user: dict = Depends(get_current_user)):
+    """List enriched accounts for the current user's team."""
     db = _get_db()
     try:
-        return db.list_enrichments(limit=limit, offset=offset)
+        return db.list_enrichments(limit=limit, offset=offset, team_id=current_user["team_id"])
     finally:
         db.close()
 
 
 @router.get("/{domain:path}")
-def get_enrichment(domain: str, force_refresh: bool = False):
+def get_enrichment(domain: str, force_refresh: bool = False,
+                   current_user: dict = Depends(get_current_user)):
     """Get enrichment data for a specific domain."""
     db = _get_db()
     try:
@@ -144,7 +150,7 @@ def get_enrichment(domain: str, force_refresh: bool = False):
                 return existing
         from src.enrichment.engine import enrich_domain
         data = enrich_domain(domain)
-        db.upsert_enrichment(data)
+        db.upsert_enrichment(data, team_id=current_user["team_id"])
         return data.model_dump(mode="json")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
