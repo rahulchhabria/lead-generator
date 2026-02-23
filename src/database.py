@@ -208,15 +208,17 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE campaigns ADD COLUMN user_id TEXT REFERENCES users(id)"
             )
-            # Assign legacy campaigns (created before user management) to the first admin
-            first_admin = self.conn.execute(
-                "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1"
-            ).fetchone()
-            if first_admin:
-                self.conn.execute(
-                    "UPDATE campaigns SET user_id = ? WHERE user_id IS NULL",
-                    (first_admin["id"],),
-                )
+
+        # Always assign unowned campaigns to the first admin — covers both fresh
+        # migration and cases where the admin was created after migration ran.
+        first_admin = self.conn.execute(
+            "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+        ).fetchone()
+        if first_admin:
+            self.conn.execute(
+                "UPDATE campaigns SET user_id = ? WHERE user_id IS NULL",
+                (first_admin["id"],),
+            )
 
         cursor = self.conn.execute("PRAGMA table_info(enrichment_data)")
         columns = {row[1] for row in cursor.fetchall()}

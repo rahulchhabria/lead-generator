@@ -32,7 +32,7 @@ class LoginRequest(BaseModel):
 async def signup(req: SignupRequest):
     """Create a new team and admin user via Google OAuth."""
     google_info = await verify_google_token(req.google_token)
-    email = google_info["email"]
+    email = google_info["email"].lower()
     name = google_info["name"]
     picture = google_info.get("picture")
 

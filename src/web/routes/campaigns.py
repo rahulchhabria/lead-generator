@@ -20,9 +20,11 @@ def _get_db():
     return Database(api_config.db_path)
 
 
-def _enriched_domains(db) -> set[str]:
+def _enriched_domains(db, team_id: str) -> set[str]:
     try:
-        rows = db.conn.execute("SELECT domain FROM enrichment_data").fetchall()
+        rows = db.conn.execute(
+            "SELECT domain FROM enrichment_data WHERE team_id = ?", (team_id,)
+        ).fetchall()
         return {r[0] for r in rows}
     except Exception:
         return set()
@@ -194,7 +196,7 @@ def get_campaign_accounts(campaign_id: str, status: Optional[str] = None,
             raise HTTPException(status_code=403, detail="Access denied")
         st = LeadStatus(status) if status else None
         accounts = db.get_accounts(campaign_id, st)
-        enriched = _enriched_domains(db)
+        enriched = _enriched_domains(db, current_user["team_id"])
         return [
             {
                 "id": a.id, "company_name": a.company_name, "domain": a.domain,
@@ -278,6 +280,8 @@ def review_accounts(campaign_id: str, req: dict, current_user: dict = Depends(ge
     from src.models import LeadStatus
     db = _get_db()
     try:
+        if not db.get_campaign(campaign_id):
+            raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
         if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -297,6 +301,8 @@ def review_contacts(campaign_id: str, req: dict, current_user: dict = Depends(ge
     from src.models import LeadStatus
     db = _get_db()
     try:
+        if not db.get_campaign(campaign_id):
+            raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
         if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -316,6 +322,8 @@ def review_emails(campaign_id: str, req: dict, current_user: dict = Depends(get_
     from src.models import LeadStatus
     db = _get_db()
     try:
+        if not db.get_campaign(campaign_id):
+            raise HTTPException(status_code=404, detail="Campaign not found")
         owner = db.get_campaign_owner(campaign_id)
         if owner is None or owner != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")

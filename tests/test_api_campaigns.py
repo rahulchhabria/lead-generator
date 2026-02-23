@@ -224,10 +224,11 @@ class TestReviewAuth:
         )
         assert resp.status_code == 403
 
-    def test_review_null_owner_campaign_403(self, app_client):
-        """Bug #7 fix: campaign with NULL user_id denies access to any user."""
+    def test_review_null_owner_campaign_reassigned_to_first_admin(self, app_client):
+        """NULL user_id campaigns are assigned to the first admin on migration;
+        other users are still denied access."""
         client, db_path = app_client
-        user_a, _user_b = _setup_two_users(db_path)
+        user_a, user_b = _setup_two_users(db_path)
 
         # Insert campaign with NULL user_id directly via SQL
         campaign_id = str(uuid.uuid4())
@@ -243,9 +244,18 @@ class TestReviewAuth:
         acct_id = db.insert_account(account)
         db.close()
 
+        # user_b (not the first admin) is denied access
+        resp = client.post(
+            f"/api/campaigns/{campaign_id}/accounts/review",
+            json={"approved_ids": [acct_id], "rejected_ids": []},
+            headers=_headers(user_b),
+        )
+        assert resp.status_code == 403
+
+        # user_a (first admin) gets ownership via migration and can access it
         resp = client.post(
             f"/api/campaigns/{campaign_id}/accounts/review",
             json={"approved_ids": [acct_id], "rejected_ids": []},
             headers=_headers(user_a),
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200

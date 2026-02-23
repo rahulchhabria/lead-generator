@@ -130,7 +130,7 @@ def get_contact(contact_id: int, current_user: dict = Depends(get_current_user))
         ]
 
         if account:
-            result["account_enrichment"] = db.get_enrichment(account.domain)
+            result["account_enrichment"] = db.get_enrichment(account.domain, team_id=current_user["team_id"])
 
         return result
     finally:
