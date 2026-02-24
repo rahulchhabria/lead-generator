@@ -209,16 +209,20 @@ class Database:
                 "ALTER TABLE campaigns ADD COLUMN user_id TEXT REFERENCES users(id)"
             )
 
-        # Always assign unowned campaigns to the first admin — covers both fresh
-        # migration and cases where the admin was created after migration ran.
-        first_admin = self.conn.execute(
-            "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+        # Assign unowned campaigns to the first admin, but only when there are
+        # NULL-owner campaigns to avoid unnecessary writes on every startup.
+        has_unowned = self.conn.execute(
+            "SELECT 1 FROM campaigns WHERE user_id IS NULL LIMIT 1"
         ).fetchone()
-        if first_admin:
-            self.conn.execute(
-                "UPDATE campaigns SET user_id = ? WHERE user_id IS NULL",
-                (first_admin["id"],),
-            )
+        if has_unowned:
+            first_admin = self.conn.execute(
+                "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+            ).fetchone()
+            if first_admin:
+                self.conn.execute(
+                    "UPDATE campaigns SET user_id = ? WHERE user_id IS NULL",
+                    (first_admin["id"],),
+                )
 
         cursor = self.conn.execute("PRAGMA table_info(enrichment_data)")
         columns = {row[1] for row in cursor.fetchall()}
@@ -838,9 +842,6 @@ class Database:
 
     def upsert_enrichment(self, data, team_id: Optional[str] = None) -> None:
         """Insert or update enrichment data for a domain."""
-        import json
-        from datetime import datetime, timezone
-
         def _dump(obj):
             if obj is None:
                 return None
@@ -908,9 +909,15 @@ class Database:
         )
         self.conn.commit()
 
+    def get_enriched_domains(self, team_id: str) -> set[str]:
+        """Return the set of domains with enrichment data for a team."""
+        rows = self.conn.execute(
+            "SELECT domain FROM enrichment_data WHERE team_id = ?", (team_id,)
+        ).fetchall()
+        return {r["domain"] for r in rows}
+
     def get_enrichment(self, domain: str, team_id: Optional[str] = None) -> Optional[dict]:
         """Get enrichment data for a domain as a dict, optionally filtered by team."""
-        import json
         if team_id:
             row = self.conn.execute(
                 "SELECT * FROM enrichment_data WHERE domain = ? AND team_id = ?",
@@ -942,8 +949,6 @@ class Database:
         return [self._enrichment_row_to_dict(r) for r in rows]
 
     def _enrichment_row_to_dict(self, row) -> dict:
-        import json
-
         def _load(val):
             if val is None:
                 return None
@@ -987,6 +992,7 @@ class Database:
             "sources": _load(row["sources"]) or [],
             "last_enriched_at": row["last_enriched_at"],
             "enrichment_error": row["enrichment_error"],
+            "team_id": row["team_id"],
         }
 
     def get_account(self, account_id: int) -> Optional[Account]:

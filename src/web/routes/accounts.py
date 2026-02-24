@@ -17,15 +17,6 @@ def _get_db():
     return Database(api_config.db_path)
 
 
-def _enriched_domains(db, team_id: str) -> set[str]:
-    try:
-        rows = db.conn.execute(
-            "SELECT domain FROM enrichment_data WHERE team_id = ?", (team_id,)
-        ).fetchall()
-        return {r[0] for r in rows}
-    except Exception:
-        return set()
-
 
 @router.get("/")
 def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = None,
@@ -45,7 +36,7 @@ def list_accounts(campaign_id: Optional[str] = None, status: Optional[str] = Non
         else:
             accounts = db.get_all_accounts(limit=limit, user_id=current_user["id"])
 
-        enriched = _enriched_domains(db, current_user["team_id"])
+        enriched = db.get_enriched_domains(current_user["team_id"])
         return [
             {
                 "id": a.id, "campaign_id": a.campaign_id, "company_name": a.company_name,
