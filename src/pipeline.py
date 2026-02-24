@@ -248,7 +248,7 @@ class Pipeline:
     def _enrich_approved_accounts(self, campaign_id: str):
         """Enrich approved accounts using the enrichment engine (best-effort, skips cached)."""
         accounts = self.db.get_accounts(campaign_id, LeadStatus.APPROVED)
-        to_enrich = [a for a in accounts if not self.db.get_enrichment(a.domain)]
+        to_enrich = [a for a in accounts if not self.db.get_enrichment(a.domain, team_id=self.team_id)]
         if not to_enrich:
             return
 
