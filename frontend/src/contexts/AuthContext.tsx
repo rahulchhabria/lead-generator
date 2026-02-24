@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         localStorage.removeItem('token')
+        queryClient.clear()
         setState({
           user: null,
           team: null,
@@ -56,9 +57,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isAuthenticated: false,
         })
       })
-  }, [])
+  }, [queryClient])
 
   const login = useCallback(async (googleToken: string) => {
+    queryClient.clear()
     const { token, user, team } = await api.auth.login(googleToken)
     localStorage.setItem('token', token)
     setState({
@@ -68,9 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: true,
     })
-  }, [])
+  }, [queryClient])
 
   const signup = useCallback(async (googleToken: string, teamName: string) => {
+    queryClient.clear()
     const { token, user, team } = await api.auth.signup(googleToken, teamName)
     localStorage.setItem('token', token)
     setState({
@@ -80,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: true,
     })
-  }, [])
+  }, [queryClient])
 
   const logout = useCallback(() => {
     localStorage.removeItem('token')

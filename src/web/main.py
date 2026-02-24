@@ -65,8 +65,10 @@ def api_status():
 @app.get("/api/auth/config")
 def auth_config():
     """Return public auth configuration for the frontend."""
+    from src.config import load_api_config
+    config = load_api_config()
     return {
-        "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+        "google_client_id": config.google_client_id,
     }
 
 

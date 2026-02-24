@@ -227,6 +227,17 @@ class Database:
                 "ALTER TABLE enrichment_data ADD COLUMN team_id TEXT REFERENCES teams(id)"
             )
 
+        # Index for fast pending-invitation lookup on every login
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_invitations_email_status "
+            "ON invitations(email, status)"
+        )
+        # Prevent duplicate pending invitations for the same (team, email)
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_pending_unique "
+            "ON invitations(team_id, email) WHERE status = 'pending'"
+        )
+
         self.conn.commit()
 
     def close(self):
@@ -321,8 +332,7 @@ class Database:
             (invitation_id, team_id, email.lower(), invited_by, expires_at),
         )
         self.conn.commit()
-        return {"id": invitation_id, "team_id": team_id, "email": email.lower(),
-                "invited_by": invited_by, "status": "pending", "expires_at": expires_at}
+        return self.get_invitation(invitation_id)
 
     def get_invitation(self, invitation_id: str) -> Optional[dict]:
         row = self.conn.execute(
@@ -876,7 +886,7 @@ class Database:
                 ai_insights=excluded.ai_insights, data_quality=excluded.data_quality,
                 confidence_score=excluded.confidence_score, sources=excluded.sources,
                 last_enriched_at=excluded.last_enriched_at, enrichment_error=excluded.enrichment_error,
-                team_id=enrichment_data.team_id""",
+                team_id=COALESCE(enrichment_data.team_id, excluded.team_id)""",
             (
                 data.domain, data.company_name, data.description, data.long_description,
                 data.founded_year, data.employee_count, data.employee_count_range, data.engineering_count,
