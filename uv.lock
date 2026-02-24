@@ -606,16 +606,12 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-mock" },
     { name = "ruff" },
 ]
 hunter = [
     { name = "pyhunter" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
@@ -630,6 +626,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pyhunter", marker = "extra == 'hunter'", specifier = ">=1.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.3.0" },
@@ -645,7 +642,7 @@ requires-dist = [
 provides-extras = ["hunter", "dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-asyncio", specifier = ">=1.3.0" }]
+dev = []
 
 [[package]]
 name = "pyasn1"
