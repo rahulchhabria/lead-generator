@@ -88,19 +88,7 @@ export const api = {
     upload: (file: File) => {
       const form = new FormData()
       form.append('file', file)
-      const token = localStorage.getItem('token')
-      return fetch(`${BASE}/enrichment/upload`, {
-        method: 'POST',
-        body: form,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      }).then(r => {
-        if (r.status === 401) {
-          localStorage.removeItem('token')
-          window.location.href = '/login'
-          throw new Error('Unauthorized')
-        }
-        return r.json()
-      })
+      return request<{ job_id: string; total: number }>('/enrichment/upload', { method: 'POST', body: form })
     },
   },
   accounts: {
