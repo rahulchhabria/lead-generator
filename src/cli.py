@@ -29,6 +29,18 @@ app = typer.Typer(
 )
 
 
+def _resolve_team_id(db: Database, team: str) -> str:
+    """Resolve a team name or allowed_domain to a team ID."""
+    row = db.conn.execute(
+        "SELECT id FROM teams WHERE id = ? OR allowed_domain = ? OR name = ? LIMIT 1",
+        (team, team, team),
+    ).fetchone()
+    if not row:
+        console.print(f"[red]Team not found: {team!r}. Use team ID, allowed domain, or name.[/red]")
+        raise typer.Exit(1)
+    return row["id"]
+
+
 def _setup_logging(verbose: bool = False):
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -258,6 +270,7 @@ def suppress(
 def enrich(
     domain: str = typer.Argument(..., help="Domain to enrich (e.g. stripe.com)"),
     company_name: str = typer.Option(None, "--company", "-c", help="Company name hint"),
+    team: str = typer.Option(None, "--team", "-t", help="Team domain or ID to associate enrichment with"),
     output: str = typer.Option(None, "--output", "-o", help="Save JSON to file"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ):
@@ -276,8 +289,9 @@ def enrich(
     console.print(f"[blue]Enriching {domain}...[/blue]")
     db = Database(api_config.db_path)
     try:
+        team_id = _resolve_team_id(db, team) if team else None
         data = enrich_domain(domain, company_name)
-        db.upsert_enrichment(data)
+        db.upsert_enrichment(data, team_id=team_id)
 
         from rich.table import Table
         from rich.panel import Panel
@@ -314,6 +328,7 @@ def enrich(
 @app.command(name="enrich-bulk")
 def enrich_bulk(
     domains_file: str = typer.Argument(..., help="CSV or YAML file with domains to enrich"),
+    team: str = typer.Option(None, "--team", "-t", help="Team domain or ID to associate enrichment with"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ):
     """Bulk enrich domains from a CSV/YAML file."""
@@ -330,6 +345,7 @@ def enrich_bulk(
     import yaml
 
     db = Database(api_config.db_path)
+    team_id = _resolve_team_id(db, team) if team else None
     domains = []
 
     try:
@@ -365,7 +381,7 @@ def enrich_bulk(
                 progress.update(task, description=f"Enriching {domain}")
                 try:
                     data = enrich_domain(domain, company_name)
-                    db.upsert_enrichment(data)
+                    db.upsert_enrichment(data, team_id=team_id)
                     progress.advance(task)
                 except Exception as e:
                     console.print(f"[red]Error enriching {domain}: {e}[/red]")
