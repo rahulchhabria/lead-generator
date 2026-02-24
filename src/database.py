@@ -251,7 +251,7 @@ class Database:
             (team_id, name, allowed_domain),
         )
         self.conn.commit()
-        return {"id": team_id, "name": name, "allowed_domain": allowed_domain}
+        return self.get_team(team_id)
 
     def get_team(self, team_id: str) -> Optional[dict]:
         row = self.conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
@@ -282,8 +282,7 @@ class Database:
             (user_id, team_id, email, name, avatar_url, role),
         )
         self.conn.commit()
-        return {"id": user_id, "team_id": team_id, "email": email, "name": name,
-                "avatar_url": avatar_url, "role": role, "status": "active"}
+        return self.get_user(user_id)
 
     def get_user(self, user_id: str) -> Optional[dict]:
         row = self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -310,6 +309,8 @@ class Database:
         self.conn.commit()
 
     def delete_user(self, user_id: str) -> None:
+        self.conn.execute("UPDATE campaigns SET user_id = NULL WHERE user_id = ?", (user_id,))
+        self.conn.execute("DELETE FROM invitations WHERE invited_by = ?", (user_id,))
         self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         self.conn.commit()
 

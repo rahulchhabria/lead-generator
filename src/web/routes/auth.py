@@ -82,7 +82,7 @@ async def signup(req: SignupRequest):
 async def login(req: LoginRequest):
     """Log in with Google OAuth. Accepts existing users or invited users."""
     google_info = await verify_google_token(req.google_token)
-    email = google_info["email"]
+    email = google_info["email"].lower()
     name = google_info["name"]
     picture = google_info.get("picture")
 
